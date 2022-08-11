@@ -9,7 +9,7 @@ struct cpu_state {
     int cycles;
 };
 
-cpu_state cpu_init();
+struct cpu_state cpu_init();
 void cpu_clock();
 
 #endif
