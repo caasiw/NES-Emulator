@@ -306,12 +306,14 @@ int brk(struct cpu_state *cpu) {
     push(cpu, cpu->status);
     cpu->status &= ~b;
     cpu->pc = read16(0xFFFE);
+    return 0;
 }
 
 int jsr(struct cpu_state *cpu) {
     cpu->pc--;
     push16(cpu, cpu->pc);
     cpu->pc = cpu->opAddress;
+    return 0;
 }
 
 int rti(struct cpu_state *cpu) {
@@ -319,14 +321,17 @@ int rti(struct cpu_state *cpu) {
     cpu->pc = pop16(cpu);
     cpu->status &= ~b;
     cpu->status |= u;
+    return 0;
 }
 
 int rts(struct cpu_state *cpu) {
     cpu->pc = pop16(cpu);
     cpu->pc++;
+    return 0;
 }
 
 int branch(struct cpu_state *cpu, uint8_t opcode) {
+    cpu->cycles = rel(cpu);
     uint8_t flag;
     if (opcode & (1 << 7))
         flag = ( (opcode & (1 << 6)) ? z : c);
@@ -335,8 +340,7 @@ int branch(struct cpu_state *cpu, uint8_t opcode) {
 
     if ((!!(cpu->status & flag)) == (!!(opcode & (1 << 5)))) {
         cpu->pc = cpu->opAddress;
-        cpu->cycles++;
-        return 1;
+        cpu->cycles += 2;
     }
     return 0;
 }
@@ -353,6 +357,7 @@ void execute_instruction(struct cpu_state *cpu){
     uint8_t bbb = (opcode >> 2) & 0x07;
     uint8_t cc  = opcode & 0x03;
 
+    cpu->cycles = 0;
     switch (cc) {
         case 1 : // Group One Opcodes (aaabbb01)
             switch (bbb) {
@@ -369,43 +374,43 @@ void execute_instruction(struct cpu_state *cpu){
                     aba(cpu);
                     break;
                 case 4 :
-                    iny(cpu);
+                    cpu->cycles += iny(cpu);
                     break;
                 case 5 :
                     zpx(cpu);
                     break;
                 case 6 :
-                    aby(cpu);
+                    cpu->cycles += aby(cpu);
                     break;
                 case 7 :
-                    abx(cpu);
+                    cpu->cycles += abx(cpu);
                     break;
             }
             switch (aaa) {
                 case 0 :
-                    ora(cpu);
+                    cpu->cycles += ora(cpu);
                     break;
                 case 1 :
-                    and(cpu);
+                    cpu->cycles += and(cpu);
                     break;
                 case 2 :
-                    eor(cpu);
+                    cpu->cycles += eor(cpu);
                     break;
                 case 3 :
-                    adc(cpu);
+                    cpu->cycles += adc(cpu);
                     break;
                 case 4 :
                     if (bbb != 2)
                         sta(cpu);
                     break;
                 case 5 : 
-                    lda(cpu);
+                    cpu->cycles += lda(cpu);
                     break;
                 case 6 :
-                    cmp(cpu);
+                    cpu->cycles += cmp(cpu);
                     break;
                 case 7 :
-                    sbc(cpu);
+                    cpu->cycles += sbc(cpu);
                     break;
             }
             break;
@@ -429,17 +434,17 @@ void execute_instruction(struct cpu_state *cpu){
                     break;
                 case 7 :
                     if ((aaa == 4) || (aaa == 5))
-                        aby(cpu);
+                        cpu->cycles += aby(cpu);
                     else
-                        abx(cpu);
+                        cpu->cycles += abx(cpu);
                     break;
             }
             switch (aaa) {
                 case 0 :
                     if (bbb == 2)
-                        asl(cpu, 0);
+                        cpu->cycles += asl(cpu, 0);
                     else if ((bbb != 0) && (bbb != 4) && (bbb != 6))
-                        asl(cpu, 1);
+                        cpu->cycles += asl(cpu, 1);
                     break;
                 case 1 :
                     if (bbb == 2)
@@ -449,9 +454,9 @@ void execute_instruction(struct cpu_state *cpu){
                     break;
                 case 2 :
                     if (bbb == 2)
-                        lsr(cpu, 0);
+                        cpu->cycles += lsr(cpu, 0);
                     else if ((bbb != 0) && (bbb != 4) && (bbb != 6))
-                        lsr(cpu, 1);
+                        cpu->cycles += lsr(cpu, 1);
                     break;
                 case 3 :
                     if (bbb == 2)
@@ -473,7 +478,7 @@ void execute_instruction(struct cpu_state *cpu){
                     else if (bbb == 6)
                         cpu->x = cpu->sp;
                     else if (bbb != 4)
-                        ldx(cpu);
+                        cpu->cycles += ldx(cpu);
                     break;
                 case 6 :
                     if (bbb & 0x01)
@@ -505,7 +510,7 @@ void execute_instruction(struct cpu_state *cpu){
                     zpx(cpu);
                     break;
                 case 7 :
-                    abx(cpu);
+                    cpu->cycles += abx(cpu);
                     break;
             }
             switch (aaa) {
@@ -569,7 +574,7 @@ void execute_instruction(struct cpu_state *cpu){
                     break;
                 case 5 :
                     if (((bbb % 2) == 1) || (bbb == 0))
-                        ldy(cpu);
+                        cpu->cycles += ldy(cpu);
                     else if (bbb == 2)
                         cpu->y = cpu->acc;
                     else if (bbb == 4)
@@ -614,7 +619,7 @@ void execute_instruction(struct cpu_state *cpu){
                     aba(cpu);
                     break;
                 case 4 :
-                    iny(cpu);
+                    cpu->cycles += iny(cpu);
                     break;
                 case 5 :
                     if ((aaa == 4) || (aaa == 5))
@@ -623,19 +628,34 @@ void execute_instruction(struct cpu_state *cpu){
                         zpx(cpu);
                     break;
                 case 6 :
-                    aby(cpu);
+                    cpu->cycles += aby(cpu);
                     break;
                 case 7 :
                     if ((aaa == 4) || (aaa == 5))
-                        aby(cpu);
+                        cpu->cycles += aby(cpu);
                     else 
-                        abx(cpu);
+                        cpu->cycles += abx(cpu);
                     break;
             }
+            break;
+    }
+
+    switch(cpu->cycles) {
+        case 3 : 
+            cpu->cycles = 4;
+            break;
+        case 2 : 
+            cpu->cycles = 3;
+            break;
+        default :
+            cpu->cycles = 2;
             break;
     }
 }
 
 void cpu_clock(struct cpu_state *cpu) {
-
+    if (cpu->cycles == 0) {
+        execute_instruction(cpu);
+    }
+    cpu->cycles--;
 }
