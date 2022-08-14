@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "cpu.h"
 #include "memory.h"
 
 #define c (1 << 0)

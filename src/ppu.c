@@ -1,8 +1,5 @@
 #include <stdint.h>
-
-struct ppu_state {
-    int scanline, cycle;
-};
+#include "ppu.h"
 
 struct ppu_state ppu_init() { 
     struct ppu_state ppu = {0};
