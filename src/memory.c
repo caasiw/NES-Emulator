@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "memory.h"
 #include "ppuMemory.h"
+#include "mappers.h"
 
 uint8_t ram[0x0800];
 int ppuLatch = 0;
