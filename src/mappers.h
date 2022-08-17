@@ -5,20 +5,29 @@
 
 uint8_t mapper;
 
+enum mirroring {
+    Horizontal,
+    Vertical,
+    OneScreen,
+    FourScreen
+} mirroring;
+
 struct mapper {
-    void (*init)(uint8_t *prg, uint8_t *chr);
-    uint8_t (*read)(uint16_t address);
-    void (*write)(uint16_t address, uint8_t data);
+    void    (*init)(uint8_t *prg, uint8_t *chr, int prgBanks, int chrBanks);
+    uint8_t (*ppuRead)(uint16_t);
+    uint8_t (*cpuRead)(uint16_t);
+    void    (*ppuWrite)(uint16_t, uint8_t);
+    void    (*cpuWrite)(uint16_t, uint8_t);
 };
 
-void mapper000_init(uint8_t *prg, uint8_t *chr);
-void mapper000_cpu_write(uint16_t address, uint8_t data);
-uint8_t mapper000_cpu_read(uint16_t address);
-void mapper000_ppu_write(uint16_t address, uint8_t data);
-uint8_t mapper000_ppu_read(uint16_t address);
+void m000_init(uint8_t *prg, uint8_t *chr, int prgBanks, int chrBanks);
+void m000_cpuWrite(uint16_t address, uint8_t data);
+uint8_t m000_cpuRead(uint16_t address);
+void m000_ppuWrite(uint16_t address, uint8_t data);
+uint8_t m000_ppuRead(uint16_t address);
 
 struct mapper mappers[256] = {
-    {&mapper000_init, mapper000_read, mapper000_write}
+    {&m000_init, &m000_ppuRead, &m000_cpuRead, &m000_ppuWrite, &m000_cpuWrite}
 };
 
 #endif
