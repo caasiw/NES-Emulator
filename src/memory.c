@@ -60,7 +60,7 @@ void cpu_write(uint16_t address, uint8_t data) {
         // APU and IO Registers
     }
     else if ( (address <= 0xFFFF) && (address >= 0x4020) ) {
-        // Cartridge
+        mappers[mapper].cpuWrite(address, data);
     }
 }
 
@@ -108,7 +108,7 @@ uint8_t cpu_read(uint16_t address) {
         // APU and IO Registers
     }
     else if ( (address <= 0xFFFF) && (address >= 0x4020) ) {
-        // Cartridge
+        return mappers[mapper].cpuRead(address);
     }
     return 0;
 }
