@@ -7,6 +7,7 @@ uint8_t nextID, nextAtt, nextLO, nextHI;
 
 struct ppu_state ppu_init() { 
     struct ppu_state ppu = {0};
+    ppu.scanline = 261;
     return ppu;
 }
 
@@ -63,7 +64,7 @@ void ppu_clock(struct ppu_state *ppu) {
 
     // Pre Render
     if (ppu->scanline == 261) {
-        if(ppu->cycle = 1) {
+        if(ppu->cycle == 1) {
             ppuStatus.vBlank = 0;
             ppuStatus.spriteZeroHit = 0;
             ppuStatus.spriteOverflow = 0;
@@ -115,7 +116,7 @@ void ppu_clock(struct ppu_state *ppu) {
             transferX();
         }
         else if ((ppu->cycle == 337) || (ppu->cycle == 339))
-            nextID = ppu_read(0x2000 | loopyV.reg & 0x0FFF);
+            nextID = ppu_read(0x2000 | (loopyV.reg & 0x0FFF));
     }
 
     // Post Render
@@ -133,9 +134,33 @@ void ppu_clock(struct ppu_state *ppu) {
 
     }
 
+    // Increment Cycle / Scanline
     if (++ppu->cycle >= 340) {
         if (++ppu->scanline >= 262)
             ppu->scanline = 0;
         ppu->cycle = 0;
     } 
+
+    // Update Pixel Array
+    if ( (ppu->scanline >= 0) && (ppu->scanline < 240) ) {
+        if ((ppu->cycle >= 0) && (ppu->cycle < 256)) {
+            uint8_t bgVal = 0x00;
+            uint8_t bgPal = 0x00;
+
+            if (ppuMask.showBackground) {
+                uint16_t selector = 0x8000 >> ppuFineX;
+
+                uint8_t temp1 = ((shiftPLO & selector) > 0);
+                uint8_t temp2 = ((shiftPHI & selector) > 0);
+                bgVal = (temp2 << 1) | temp1;
+
+                temp1 = ((shiftLO & selector) > 0);
+                temp2 = ((shiftHI & selector) > 0);
+                bgPal = (temp2 << 1) | temp1;
+
+                uint8_t colour = ppu_read((0x3F00 + (bgPal << 2) + bgVal));
+                ppu->pixels[((ppu->scanline * 256) + ppu->cycle)] = colour;
+            }
+        }
+    }
 }

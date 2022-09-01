@@ -95,7 +95,7 @@ uint8_t cpu_read(uint16_t address) {
                 return 0;
                 break;
             case 7 :
-                uint8_t temp = ppuData;
+                temp = ppuData;
                 ppuData = ppu_read(loopyV.reg);
                 if (address >= 0x3F00)  
                     temp = ppuData;

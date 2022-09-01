@@ -1,6 +1,11 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include "mappers.h"
+
+struct mapper mappers[256] = {
+    {&m000_init, &m000_ppuRead, &m000_cpuRead, &m000_ppuWrite, &m000_cpuWrite}
+};
 
 void parseRom(FILE *rom) {
     uint32_t checksum;
@@ -36,7 +41,8 @@ void parseRom(FILE *rom) {
     mappers[mapper].init(prg, chr, prgBanks, chrBanks);
 }
 
-void selectRom() {
+FILE* selectRom() {
     FILE *rom;
     rom = fopen("../roms/nestest.nes", "rb");
+    return rom;
 }

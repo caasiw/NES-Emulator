@@ -11,12 +11,6 @@
 #define v (1 << 6)
 #define n (1 << 7)
 
-struct cpu_state {
-    uint16_t pc, opAddress;
-    uint8_t acc, x, y, sp, status;
-    int cycles;
-};
-
 uint16_t read16(uint16_t address) {
     return ((cpu_read(address + 1) << 8) | cpu_read(address));
 }
@@ -145,7 +139,10 @@ int adc(struct cpu_state *cpu) {
     uint8_t operand = cpu_read(cpu->opAddress);
     uint16_t temp = cpu->acc + operand + (cpu->status & c);
     setFlags(cpu, (temp & 0x00FF), z | n);
-    cpu->status = ( (temp > 0x00FF) ? (cpu->status |= c) : (cpu->status &= ~c));
+    if (temp > 0x00FF)
+        cpu->status |= c;
+    else
+        cpu->status &= ~c;
     if ( (((~(cpu->acc ^ operand)) & (cpu->acc ^ temp)) & n) )
         cpu->status |= v;
     else
@@ -167,7 +164,10 @@ int lda(struct cpu_state *cpu) {
 
 int cmp(struct cpu_state *cpu) {
     uint8_t op = cpu_read(cpu->opAddress);
-    cpu->status = ((cpu->acc >= op) ? (cpu->status |= c) : (cpu->status &= ~c));
+    if (cpu->acc >= op)
+        cpu->status |= c;
+    else
+        cpu->status &= ~c;
     setFlags(cpu, (cpu->acc - op), z | n);
     return 1;
 }
@@ -176,7 +176,10 @@ int sbc(struct cpu_state *cpu) {
     uint8_t operand = ~cpu_read(cpu->opAddress);
     uint16_t temp = cpu->acc + operand + (cpu->status & c);
     setFlags(cpu, (temp & 0x00FF), z | n);
-    cpu->status = ( (temp > 0x00FF) ? (cpu->status |= c) : (cpu->status &= ~c));
+    if (temp > 0x00FF)
+        cpu->status |= c;
+    else
+        cpu->status &= ~c;
     if ( (((~(cpu->acc ^ operand)) & (cpu->acc ^ temp)) & n) )
         cpu->status |= v;
     else
@@ -188,7 +191,10 @@ int sbc(struct cpu_state *cpu) {
 // Group Two Instructions
 int asl(struct cpu_state *cpu, int useAddress) {
     uint8_t operand = ( (useAddress) ? cpu_read(cpu->opAddress) : cpu->acc);
-    cpu->status = ( (operand & n) ? (cpu->status |= c) : (cpu->status &= ~c));
+    if (operand & n)
+        cpu->status |= c;
+    else
+        cpu->status &= ~c;
     operand <<= 1;
     setFlags(cpu, operand, z | n);
     if (useAddress)
@@ -201,7 +207,10 @@ int asl(struct cpu_state *cpu, int useAddress) {
 int rol(struct cpu_state *cpu, int useAddress) {
     uint8_t operand = ( (useAddress) ? cpu_read(cpu->opAddress) : cpu->acc);
     int rolledBit = cpu->status & c;
-    cpu->status = ( (operand & n) ? (cpu->status |= c) : (cpu->status &= ~c));
+    if (operand & n)
+        cpu->status |= c;
+    else
+        cpu->status &= ~c;
     operand = (operand << 1) | rolledBit;
     setFlags(cpu, operand, z | n);
     if (useAddress)
@@ -213,7 +222,10 @@ int rol(struct cpu_state *cpu, int useAddress) {
 
 int lsr(struct cpu_state *cpu, int useAddress) {
     uint8_t operand = ( (useAddress) ? cpu_read(cpu->opAddress) : cpu->acc);
-    cpu->status = ( (operand & c) ? (cpu->status |= c) : (cpu->status &= ~c));
+    if (operand & c)
+        cpu->status |= c;
+    else
+        cpu->status &= ~c;
     operand >>= 1;
     setFlags(cpu, operand, z | n);
     if (useAddress)
@@ -226,7 +238,10 @@ int lsr(struct cpu_state *cpu, int useAddress) {
 int ror(struct cpu_state *cpu, int useAddress) {
     uint8_t operand = ( (useAddress) ? cpu_read(cpu->opAddress) : cpu->acc);
     int rolledBit = cpu->status & c;
-    cpu->status = ( (operand & c) ? (cpu->status |= c) : (cpu->status &= ~c));
+    if (operand & c)
+        cpu->status |= c;
+    else
+        cpu->status &= ~c;
     operand = (operand >> 1) | (rolledBit << 7);
     setFlags(cpu, operand, z | n);
     if (useAddress)
@@ -265,7 +280,10 @@ int inc(struct cpu_state *cpu) {
 int bit(struct cpu_state *cpu) {
     uint8_t operand = cpu_read(cpu->opAddress);
     setFlags(cpu, operand, n);
-    cpu->status = ((operand & 0x40) ? (cpu->status |= v) : (cpu->status &= ~v));
+    if (operand & 0x40)
+        cpu->status |= v;
+    else
+        cpu->status &= ~v;
     setFlags(cpu, operand & cpu->acc, z);
     return 0;
 }
@@ -288,14 +306,20 @@ int ldy(struct cpu_state *cpu) {
 
 int cpy(struct cpu_state *cpu) {
     uint8_t op = cpu_read(cpu->opAddress);
-    cpu->status = ((cpu->y >= op) ? (cpu->status |= c) : (cpu->status &= ~c));
+    if (cpu->y >= op)
+        cpu->status |= c;
+    else
+        cpu->status &= ~c;
     setFlags(cpu, (cpu->y - op), z | n);
     return 0;
 }
 
 int cpx(struct cpu_state *cpu) {
     uint8_t op = cpu_read(cpu->opAddress);
-    cpu->status = ((cpu->x >= op) ? (cpu->status |= c) : (cpu->status &= ~c));
+    if (cpu->x >= op)
+        cpu->status |= c;
+    else
+        cpu->status &= ~c;
     setFlags(cpu, (cpu->x - op), z | n);
     return 0;
 }
@@ -349,6 +373,9 @@ int branch(struct cpu_state *cpu, uint8_t opcode) {
 
 struct cpu_state cpu_init() {
     struct cpu_state cpu = {0};
+    cpu.pc = (cpu_read(0xFFFD) << 8) | (cpu_read(0xFFFC));
+    cpu.status = 0x34;
+    cpu.sp = 0xFD;
     return cpu;
 }
 

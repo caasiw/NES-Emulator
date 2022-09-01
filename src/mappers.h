@@ -26,8 +26,6 @@ uint8_t m000_cpuRead(uint16_t address);
 void m000_ppuWrite(uint16_t address, uint8_t data);
 uint8_t m000_ppuRead(uint16_t address);
 
-struct mapper mappers[256] = {
-    {&m000_init, &m000_ppuRead, &m000_cpuRead, &m000_ppuWrite, &m000_cpuWrite}
-};
+struct mapper mappers[256];
 
 #endif

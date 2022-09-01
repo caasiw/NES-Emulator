@@ -5,7 +5,7 @@
 
 struct ppu_state {
     int scanline, cycle;
-    uint8_t *pixels;
+    uint8_t pixels[256 * 240];
 };
 
 struct ppu_state ppu_init();
