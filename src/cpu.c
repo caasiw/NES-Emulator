@@ -2,6 +2,12 @@
 #include "cpu.h"
 #include "memory.h"
 
+#define Debug
+
+#ifdef Debug
+#include <stdio.h>
+#endif
+
 #define c (1 << 0)
 #define z (1 << 1)
 #define i (1 << 2)
@@ -98,12 +104,12 @@ int ind(struct cpu_state *cpu) {
     return 0;
 }
 
-int inx(struct cpu_state *cpu) {
+int idx(struct cpu_state *cpu) {
     cpu->opAddress = read16wrap((cpu_read(cpu->pc++) + cpu->x) & 0x00FF); 
     return 0;
 }
 
-int iny(struct cpu_state *cpu) {
+int idy(struct cpu_state *cpu) {
     uint16_t temp = read16wrap(cpu_read(cpu->pc++));
     cpu->opAddress = temp + cpu->y;
     return pageCheck(temp, cpu->y);
@@ -356,7 +362,6 @@ int rts(struct cpu_state *cpu) {
 }
 
 int branch(struct cpu_state *cpu, uint8_t opcode) {
-    cpu->cycles = rel(cpu);
     uint8_t flag;
     if (opcode & (1 << 7))
         flag = ( (opcode & (1 << 6)) ? z : c);
@@ -365,7 +370,8 @@ int branch(struct cpu_state *cpu, uint8_t opcode) {
 
     if ((!!(cpu->status & flag)) == (!!(opcode & (1 << 5)))) {
         cpu->pc = cpu->opAddress;
-        cpu->cycles += 2;
+        cpu->cycles++;
+        return 1;
     }
     return 0;
 }
@@ -381,302 +387,251 @@ struct cpu_state cpu_init() {
 
 void execute_instruction(struct cpu_state *cpu){
     uint8_t opcode = cpu_read(cpu->pc++);
-    uint8_t aaa = opcode >> 5;
-    uint8_t bbb = (opcode >> 2) & 0x07;
-    uint8_t cc  = opcode & 0x03;
+    int oopsCycle = 0;
+    int accOrAddress = 1;
 
-    cpu->cycles = 0;
-    switch (cc) {
-        case 1 : // Group One Opcodes (aaabbb01)
-            switch (bbb) {
-                case 0 :
-                    inx(cpu);
-                    break;
-                case 1 :
-                    zpa(cpu);
-                    break;
-                case 2 :
-                    imm(cpu);
-                    break;
-                case 3 :
-                    aba(cpu);
-                    break;
-                case 4 :
-                    cpu->cycles += iny(cpu);
-                    break;
-                case 5 :
-                    zpx(cpu);
-                    break;
-                case 6 :
-                    cpu->cycles += aby(cpu);
-                    break;
-                case 7 :
-                    cpu->cycles += abx(cpu);
-                    break;
-            }
-            switch (aaa) {
-                case 0 :
-                    cpu->cycles += ora(cpu);
-                    break;
-                case 1 :
-                    cpu->cycles += and(cpu);
-                    break;
-                case 2 :
-                    cpu->cycles += eor(cpu);
-                    break;
-                case 3 :
-                    cpu->cycles += adc(cpu);
-                    break;
-                case 4 :
-                    if (bbb != 2)
-                        sta(cpu);
-                    break;
-                case 5 : 
-                    cpu->cycles += lda(cpu);
-                    break;
-                case 6 :
-                    cpu->cycles += cmp(cpu);
-                    break;
-                case 7 :
-                    cpu->cycles += sbc(cpu);
-                    break;
-            }
+    printf("%02X\n", opcode);
+
+    switch (opcode) {
+        case 0x00 :case 0x40 :case 0x60 :case 0x02 :case 0x12 :case 0x22 :
+        case 0x32 :case 0x42 :case 0x52 :case 0x62 :case 0x72 :case 0x92 :
+        case 0xB2 :case 0xD2 :case 0xF2 :case 0x08 :case 0x18 :case 0x28 :
+        case 0x38 :case 0x48 :case 0x58 :case 0x68 :case 0x78 :case 0x88 :
+        case 0x98 :case 0xA8 :case 0xB8 :case 0xC8 :case 0xD8 :case 0xE8 :
+        case 0xF8 :case 0x1A :case 0x3A :case 0x5A :case 0x7A :case 0x8A :
+        case 0x9A :case 0xAA :case 0xBA :case 0xCA :case 0xDA :case 0xEA :
+        case 0xFA :
+            cpu->cycles += 2;
             break;
-        case 2 :    // Group Two Opcodes (aaabbb10)
-            switch (bbb) {
-                case 0 :
-                    if (aaa > 3)
-                        imm(cpu);
-                    break;
-                case 1 :
-                    zpa(cpu);
-                    break;
-                case 3 :
-                    aba(cpu);
-                    break;
-                case 5 :
-                    if ((aaa == 4) || (aaa == 5))
-                        zpy(cpu);
-                    else
-                        zpx(cpu);
-                    break;
-                case 7 :
-                    if ((aaa == 4) || (aaa == 5))
-                        cpu->cycles += aby(cpu);
-                    else
-                        cpu->cycles += abx(cpu);
-                    break;
-            }
-            switch (aaa) {
-                case 0 :
-                    if (bbb == 2)
-                        cpu->cycles += asl(cpu, 0);
-                    else if ((bbb != 0) && (bbb != 4) && (bbb != 6))
-                        cpu->cycles += asl(cpu, 1);
-                    break;
-                case 1 :
-                    if (bbb == 2)
-                        rol(cpu, 0);
-                    else if ((bbb != 0) && (bbb != 4) && (bbb != 6))
-                        rol(cpu, 1);
-                    break;
-                case 2 :
-                    if (bbb == 2)
-                        cpu->cycles += lsr(cpu, 0);
-                    else if ((bbb != 0) && (bbb != 4) && (bbb != 6))
-                        cpu->cycles += lsr(cpu, 1);
-                    break;
-                case 3 :
-                    if (bbb == 2)
-                        ror(cpu, 0);
-                    else if ((bbb != 0) && (bbb != 4) && (bbb != 6))
-                        ror(cpu, 1);
-                    break;
-                case 4 :
-                    if ((bbb == 1) || (bbb == 3) || (bbb == 5))
-                        stx(cpu);
-                    else if (bbb == 2)
-                        cpu->acc = cpu->x;
-                    else if (bbb == 6)
-                        cpu->sp = cpu->x;
-                    break;
-                case 5 :
-                    if (bbb == 2)
-                        cpu->x = cpu->acc;
-                    else if (bbb == 6)
-                        cpu->x = cpu->sp;
-                    else if (bbb != 4)
-                        cpu->cycles += ldx(cpu);
-                    break;
-                case 6 :
-                    if (bbb & 0x01)
-                        dec(cpu);
-                    else if (bbb == 2)
-                        cpu->x--;
-                    break;
-                case 7 :
-                    if (bbb & 0x01)
-                        inc(cpu);
-                    break;
-            }
+        case 0x0A :case 0x2A :case 0x4A :case 0x6A :
+            accOrAddress = 0;
             break;
-        case 0 : // Group Three Opcodes (aaabbb00)
-            switch (bbb) {
-                case 0 :
-                    if (aaa > 3)
-                        imm(cpu);
-                    else if (aaa == 1)
-                        aba(cpu);
-                    break;
-                case 1 :
-                    zpa(cpu);
-                    break;
-                case 3 :
-                    aba(cpu);
-                    break;
-                case 5 :
-                    zpx(cpu);
-                    break;
-                case 7 :
-                    cpu->cycles += abx(cpu);
-                    break;
-            }
-            switch (aaa) {
-                case 0 :
-                    if (bbb == 0)
-                        brk(cpu);
-                    else if (bbb == 2)
-                        push(cpu, cpu->status);
-                    else if (bbb == 4)
-                        branch(cpu, opcode);
-                    else if (bbb == 6)
-                        cpu->status &= ~c;
-                    break;
-                case 1 :
-                    if (bbb == 0)
-                        jsr(cpu);
-                    else if (bbb == 2)
-                        cpu->status = pop(cpu);
-                    else if (bbb == 4)
-                        branch(cpu, opcode);
-                    else if (bbb == 6)
-                        cpu->status |= c;
-                    else if ((bbb == 1) || (bbb == 3))
-                        bit(cpu);
-                    break;
-                case 2 :
-                    if (bbb == 0)
-                        rti(cpu);
-                    else if (bbb == 2)
-                        push(cpu, cpu->acc);
-                    else if (bbb == 4)
-                        branch(cpu, opcode);
-                    else if (bbb == 6)
-                        cpu->status &= ~i;
-                    else if (bbb == 3)
-                        jmp(cpu);
-                    break;
-                case 3 :
-                    if (bbb == 0)
-                        rts(cpu);
-                    else if (bbb == 2)
-                        cpu->acc = pop(cpu);
-                    else if (bbb == 4)
-                        branch(cpu, opcode);
-                    else if (bbb == 6)
-                        cpu->status |= i;
-                    else if (bbb == 3) {
-                        ind(cpu);
-                        jmp(cpu);
-                    }
-                    break;
-                case 4 :
-                    if (bbb == 2)
-                        cpu->y--;
-                    else if (bbb == 4)
-                        branch(cpu, opcode);
-                    else if (bbb == 6)
-                        cpu->acc = cpu->y;
-                    else if ((bbb == 1) || (bbb == 3) || (bbb == 5))
-                        sty(cpu);
-                    break;
-                case 5 :
-                    if (((bbb % 2) == 1) || (bbb == 0))
-                        cpu->cycles += ldy(cpu);
-                    else if (bbb == 2)
-                        cpu->y = cpu->acc;
-                    else if (bbb == 4)
-                        branch(cpu, opcode);
-                    else if (bbb == 6)
-                        cpu->status &= ~v;
-                    break;
-                case 6 :
-                    if (bbb == 2)
-                        cpu->y++;
-                    else if (bbb == 4)
-                        branch(cpu, opcode);
-                    else if (bbb == 6)
-                        cpu->status &= ~d;
-                    else if ((bbb == 0) || (bbb == 1) || (bbb == 3))
-                        cpy(cpu);
-                    break;
-                case 7 :
-                    if (bbb == 2)
-                        cpu->x++;
-                    else if (bbb == 4)
-                        branch(cpu, opcode);
-                    else if (bbb == 6)
-                        cpu->status |= d;
-                    else if ((bbb == 0) || (bbb == 1) || (bbb == 3))
-                        cpx(cpu);
-                    break;
-            }
+        case 0x80 :case 0xA0 :case 0xC0 :case 0xE0 :case 0x82 :case 0xA2 :
+        case 0xC2 :case 0xE2 :case 0x09 :case 0x29 :case 0x49 :case 0x69 :
+        case 0x89 :case 0xA9 :case 0xC9 :case 0xE9 :case 0x0B :case 0x2B :
+        case 0x4B :case 0x6B :case 0x8B :case 0xAB :case 0xCB :case 0xEB :
+            imm(cpu);
+            cpu->cycles += 2;
             break;
-        case 3 :
-            switch (bbb) {
-                case 0 :
-                    inx(cpu);
-                    break;
-                case 1 :
-                    zpa(cpu);
-                    break;
-                case 2 :
-                    imm(cpu);
-                    break;
-                case 3 :
-                    aba(cpu);
-                    break;
-                case 4 :
-                    cpu->cycles += iny(cpu);
-                    break;
-                case 5 :
-                    if ((aaa == 4) || (aaa == 5))
-                        zpy(cpu);
-                    else    
-                        zpx(cpu);
-                    break;
-                case 6 :
-                    cpu->cycles += aby(cpu);
-                    break;
-                case 7 :
-                    if ((aaa == 4) || (aaa == 5))
-                        cpu->cycles += aby(cpu);
-                    else 
-                        cpu->cycles += abx(cpu);
-                    break;
-            }
+        case 0x20 :case 0x0C :case 0x2C :case 0x4C :case 0x8C :case 0xAC :
+        case 0xCC :case 0xEC :case 0x0D :case 0x2D :case 0x4D :case 0x6D :
+        case 0x8D :case 0xAD :case 0xCD :case 0xED :case 0x0E :case 0x2E :
+        case 0x4E :case 0x6E :case 0x8E :case 0xAE :case 0xCE :case 0xEE :
+        case 0x0F :case 0x2F :case 0x4F :case 0x6F :case 0x8F :case 0xAF :
+        case 0xCF :case 0xEF :
+            aba(cpu);
+            cpu->cycles += 4;
+            break;
+        case 0x1C :case 0x3C :case 0x5C :case 0x7C :case 0x9C :case 0xBC :
+        case 0xDC :case 0xFC :case 0x1D :case 0x3D :case 0x5D :case 0x7D :
+        case 0x9D :case 0xBD :case 0xDD :case 0xFD :case 0x1E :case 0x3E :
+        case 0x5E :case 0x7E :case 0xDE :case 0xFE :case 0x1F :case 0x3F :
+        case 0x5F :case 0x7F :case 0x9F :case 0xDF :case 0xFF :
+            oopsCycle += abx(cpu);
+            cpu->cycles += 4;
+            break;
+        case 0x19 :case 0x39 :case 0x59 :case 0x79 :case 0x99 :case 0xB9 :
+        case 0xD9 :case 0xF9 :case 0x1B :case 0x3B :case 0x5B :case 0x7B :
+        case 0x9B :case 0xBB :case 0xDB :case 0xFB :case 0x9E :case 0xBE :
+        case 0xBF :
+            oopsCycle += aby(cpu);
+            cpu->cycles += 4;
+            break;
+        case 0x04 :case 0x24 :case 0x44 :case 0x64 :case 0x84 :case 0xA4 :
+        case 0xC4 :case 0xE4 :case 0x05 :case 0x25 :case 0x45 :case 0x65 :
+        case 0x85 :case 0xA5 :case 0xC5 :case 0xE5 :case 0x06 :case 0x26 :
+        case 0x46 :case 0x66 :case 0x86 :case 0xA6 :case 0xC6 :case 0xE6 :
+        case 0x07 :case 0x27 :case 0x47 :case 0x67 :case 0x87 :case 0xA7 :
+        case 0xC7 :case 0xE7 :
+            zpa(cpu);
+            cpu->cycles += 3;
+            break;
+        case 0x14 :case 0x34 :case 0x54 :case 0x74 :case 0x94 :case 0xB4 :
+        case 0xD4 :case 0xF4 :case 0x15 :case 0x35 :case 0x55 :case 0x75 :
+        case 0x95 :case 0xB5 :case 0xD5 :case 0xF5 :case 0x16 :case 0x36 :
+        case 0x56 :case 0x76 :case 0xD6 :case 0xF6 :case 0x17 :case 0x37 :
+        case 0x57 :case 0x77 :case 0xD7 :case 0xF7 :
+            zpx(cpu);
+            cpu->cycles += 4;
+            break;
+        case 0x96 :case 0xB6 :case 0x97 :case 0xB7 :
+            zpy(cpu);
+            cpu->cycles += 4;
+            break;
+        case 0x6C :
+            ind(cpu);
+            break;
+        case 0x01 :case 0x21 :case 0x41 :case 0x61 :case 0x81 :case 0xA1 :
+        case 0xC1 :case 0xE1 :case 0x03 :case 0x23 :case 0x43 :case 0x63 :
+        case 0x83 :case 0xA3 :case 0xC3 :case 0xE3 :
+            idx(cpu);
+            cpu->cycles += 6;
+            break;
+        case 0x11 :case 0x31 :case 0x51 :case 0x71 :case 0x91 :case 0xB1 :
+        case 0xD1 :case 0xF1 :case 0x13 :case 0x33 :case 0x53 :case 0x73 :
+        case 0x93 :case 0xB3 :case 0xD3 :case 0xF3 :
+            oopsCycle += idy(cpu);
+            cpu->cycles += 5;
+            break;
+        case 0x10 :case 0x30 :case 0x50 :case 0x70 :case 0x90 :case 0xB0 :
+        case 0xD0 :case 0xF0 :
+            oopsCycle += rel(cpu);
             break;
     }
 
-    switch(cpu->cycles) {
-        case 3 : 
-            cpu->cycles = 4;
+    switch (opcode) {
+        case 0x61 :case 0x71 :case 0x65 :case 0x75 :case 0x69 :case 0x79 :
+        case 0x6D :case 0x7D :
+            oopsCycle += adc(cpu);
             break;
-        case 2 : 
-            cpu->cycles = 3;
+        case 0x21 :case 0x31 :case 0x25 :case 0x35 :case 0x29 :case 0x39 :
+        case 0x2D :case 0x3D :
+            oopsCycle += and(cpu);
             break;
-        default :
-            cpu->cycles = 2;
+        case 0x06 :case 0x16 :case 0x0A :case 0x0E :case 0x1E :
+            oopsCycle += asl(cpu, accOrAddress);
+            break;
+        case 0x10 :case 0x30 :case 0x50 :case 0x70 :case 0x90 :case 0xB0 :
+        case 0xD0 :case 0xF0 :
+            oopsCycle += branch(cpu, opcode);
+            break;
+        case 0x24 :case 0x2C :
+            bit(cpu);
+            break;
+        case 0x00 :
+            brk(cpu);
+            break;
+        case 0x18 :
+            cpu->status &= ~c;
+            break;
+        case 0xD8 :
+            cpu->status &= ~d;
+            break;
+        case 0x58 :
+            cpu->status &= ~i;
+            break;
+        case 0xB8 :
+            cpu->status &= ~v;
+            break;
+        case 0xC1 :case 0xD1 :case 0xC5 :case 0xD5 :case 0xC9 :case 0xD9 :
+        case 0xCD :case 0xDD :
+            oopsCycle += cmp(cpu);
+            break;
+        case 0xE0 :case 0xE4 :case 0xEC :
+            cpx(cpu);
+            break;
+        case 0xC0 :case 0xC4 :case 0xCC :
+            cpy(cpu);
+            break;
+        case 0xC6 :case 0xD6 :case 0xCE :case 0xDE :
+            dec(cpu);
+            break;
+        case 0xCA :
+            cpu->x--;
+            break;
+        case 0x88 :
+            cpu->y--;
+            break;
+        case 0x41 :case 0x51 :case 0x45 :case 0x55 :case 0x49 :case 0x59 :
+        case 0x4D :case 0x5D :
+            oopsCycle += eor(cpu);
+            break;
+        case 0xE6 :case 0xF6 :case 0xEE :case 0xFE :
+            inc(cpu);
+            break;
+        case 0xE8 :
+            cpu->x++;
+            break;
+        case 0xC8 :
+            cpu->y++;
+            break;
+        case 0x4C :case 0x6C :
+            jmp(cpu);
+            break;
+        case 0x20 :
+            jsr(cpu);
+            break;
+        case 0xA1 :case 0xB1 :case 0xA5 :case 0xB5 :case 0xA9 :case 0xB9 :
+        case 0xAD :case 0xBD :
+            oopsCycle += lda(cpu);
+            break;
+        case 0xA2 :case 0xA6 :case 0xB6 :case 0xAE :case 0xBE :
+            oopsCycle += ldx(cpu);
+            break;
+        case 0xA0 :case 0xA4 :case 0xB4 :case 0xAC :case 0xBC :
+            oopsCycle += ldy(cpu);
+            break;
+        case 0x46 :case 0x56 :case 0x4A :case 0x4E :case 0x5E :
+            oopsCycle += lsr(cpu, accOrAddress);
+            break;
+        case 0x01 :case 0x11 :case 0x05 :case 0x15 :case 0x09 :case 0x19 :
+        case 0x0D :case 0x1D :
+            oopsCycle += ora(cpu);
+            break;
+        case 0x48 :
+            push(cpu, cpu->acc);
+            break;
+        case 0x08 :
+            push(cpu, cpu->status);
+            break;
+        case 0x68 :
+            cpu->acc = pop(cpu);
+            break;
+        case 0x28 :
+            cpu->status = pop(cpu);
+            break;
+        case 0x26 :case 0x36 :case 0x2A :case 0x2E :case 0x3E :
+            rol(cpu, accOrAddress);
+            break;
+        case 0x66 :case 0x76 :case 0x6A :case 0x6E :case 0x7E :
+            ror(cpu, accOrAddress);
+            break;
+        case 0x40 :
+            rti(cpu);
+            break;
+        case 0x60 :
+            rts(cpu);
+            break;
+        case 0xE1 :case 0xF1 :case 0xE5 :case 0xF5 :case 0xE9 :case 0xF9 :
+        case 0xED :case 0xFD :
+            oopsCycle += sbc(cpu);
+            break;
+        case 0x38 :
+            cpu->status |= c;
+            break;
+        case 0xF8 :
+            cpu->status |= d;
+            break;
+        case 0x78 :
+            cpu->status |= i;
+            break;
+        case 0x81 :case 0x91 :case 0x85 :case 0x95 :case 0x99 :case 0x8D :
+        case 0x9D :
+            sta(cpu);
+            break;
+        case 0x86 :case 0x96 :case 0x8E :
+            stx(cpu);
+            break;
+        case 0x84 :case 0x94 :case 0x8C :
+            sty(cpu);
+            break;
+        case 0xAA :
+            cpu->x = cpu->acc;
+            break;
+        case 0xA8 :
+            cpu->y = cpu->acc;
+            break;
+        case 0xBA :
+            cpu->x = cpu->sp;
+            break;
+        case 0x8A :
+            cpu->acc = cpu->x;
+            break;
+        case 0x9A :
+            cpu->sp = cpu->x;
+            break;
+        case 0x98 :
+            cpu->acc = cpu->y;
             break;
     }
 }
