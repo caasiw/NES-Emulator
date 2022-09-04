@@ -1,4 +1,4 @@
-roms/Balloon Fight (USA).nes
-roms/Donkey Kong (World) (Rev A).nes
-roms/Ice Climber (USA, Europe).nes
-roms/Super Mario Bros (E).nes
+roms/*.nes
+!nestest.nes
+bin/*.o
+bin/*.exe
