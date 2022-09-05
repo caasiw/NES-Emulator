@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include "cpu.h"
+#include "memory.h"
+#include "input.h"
 #include "ppu.h"
 #include "romLoader.h"
 #define SDL_MAIN_HANDLED
@@ -11,13 +13,19 @@ int main(int argc, char* args[]) {
     struct ppu_state ppu = ppu_init();
     gui_init();
 
-    while(1) {
+    int running = 1;
+    while(running) {
         cpu_clock(&cpu);
         ppu_clock(&ppu);
         ppu_clock(&ppu);
         ppu_clock(&ppu);
         if (ppu.scanline == 261 && ppu.cycle == 2) {
             gui_update(ppu.pixels);
+            controller1 = pollController1();
+            controller2 = pollController2();
+            running = pollEvents();
         }
     }
+
+    gui_stop();
 }

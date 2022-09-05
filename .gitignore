@@ -2,3 +2,5 @@ roms/*.nes
 !nestest.nes
 bin/*.o
 bin/*.exe
+.vscode/settings.json
+bin/logs/log.txt

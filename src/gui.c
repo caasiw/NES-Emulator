@@ -49,9 +49,7 @@ void gui_stop() {
 void gui_update(uint8_t *pixels) {
     struct COLOUR colour;
     for (int y = 0; y < 240; y++) {
-        // printf("\n");
         for (int x = 0; x < 256; x++) {
-            // printf("%02X ",pixels[(y * 256) + x]);
             colour = colours[pixels[(y * 256) + x] % 64];
             for (int j = 0; j < Scale; j++) {            
                 for (int i = 0; i < Scale; i++) {
@@ -60,8 +58,6 @@ void gui_update(uint8_t *pixels) {
                     ((uint8_t*)surface->pixels)[ ( (((y * Scale) + j) * surface->pitch) + (((x * Scale) + i) * surface->format->BytesPerPixel) + 2) ] = colour.r;
                 }
             }
-
-
         }
     }
     SDL_UpdateWindowSurface(window);

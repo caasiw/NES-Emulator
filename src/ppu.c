@@ -2,6 +2,8 @@
 #include "ppu.h"
 #include "ppuMemory.h"
 
+#include <stdio.h>
+
 uint16_t shiftHI, shiftLO, shiftPHI, shiftPLO;
 uint8_t nextID, nextAtt, nextLO, nextHI;
 

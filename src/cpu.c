@@ -6,6 +6,7 @@
 
 #ifdef Debug
 #include <stdio.h>
+FILE *logfile;
 #endif
 
 #define c (1 << 0)
@@ -34,9 +35,9 @@ int pageCheck(uint16_t address, uint8_t offset) {
 
 void setFlags(struct cpu_state *cpu, uint8_t result, uint8_t mask) {
     if (mask & n)
-        cpu->status = ((result & n) ? cpu->status | n : cpu->status & ~n);
+        cpu->status = ((result & n) ? (cpu->status | n) : (cpu->status & ~n));
     if (mask & z)
-        cpu->status = ((result == 0) ? cpu->status | z : cpu->status & ~z);
+        cpu->status = ((result == 0) ? (cpu->status | z) : (cpu->status & ~z));
 }
 
 uint8_t pop(struct cpu_state *cpu) {
@@ -379,9 +380,11 @@ int branch(struct cpu_state *cpu, uint8_t opcode) {
 
 struct cpu_state cpu_init() {
     struct cpu_state cpu = {0};
-    cpu.pc = (cpu_read(0xFFFD) << 8) | (cpu_read(0xFFFC));
+    // cpu.pc = (cpu_read(0xFFFD) << 8) | (cpu_read(0xFFFC));
+    cpu.pc = read16(0xFFFC);
     cpu.status = 0x34;
     cpu.sp = 0xFD;
+    logfile = fopen("./logs/log.txt", "w+");
     return cpu;
 }
 
@@ -390,7 +393,11 @@ void execute_instruction(struct cpu_state *cpu){
     int oopsCycle = 0;
     int accOrAddress = 1;
 
-    printf("%02X\n", opcode);
+#ifdef Debug
+    fprintf(logfile, "%04X %02X ", cpu->pc, opcode);
+    uint8_t byte2 = cpu_read_debug(cpu->pc + 1);
+    uint8_t byte3 = cpu_read_debug(cpu->pc + 2);
+#endif
 
     switch (opcode) {
         case 0x00 :case 0x40 :case 0x60 :case 0x02 :case 0x12 :case 0x22 :
@@ -402,9 +409,16 @@ void execute_instruction(struct cpu_state *cpu){
         case 0x9A :case 0xAA :case 0xBA :case 0xCA :case 0xDA :case 0xEA :
         case 0xFA :
             cpu->cycles += 2;
+#ifdef Debug
+            fprintf(logfile, "      ");
+#endif
             break;
         case 0x0A :case 0x2A :case 0x4A :case 0x6A :
+#ifdef Debug
+            fprintf(logfile, "      ");
+#endif
             accOrAddress = 0;
+            cpu->cycles += 2;
             break;
         case 0x80 :case 0xA0 :case 0xC0 :case 0xE0 :case 0x82 :case 0xA2 :
         case 0xC2 :case 0xE2 :case 0x09 :case 0x29 :case 0x49 :case 0x69 :
@@ -412,6 +426,9 @@ void execute_instruction(struct cpu_state *cpu){
         case 0x4B :case 0x6B :case 0x8B :case 0xAB :case 0xCB :case 0xEB :
             imm(cpu);
             cpu->cycles += 2;
+#ifdef Debug
+            fprintf(logfile, "%02X    ", byte2);
+#endif
             break;
         case 0x20 :case 0x0C :case 0x2C :case 0x4C :case 0x8C :case 0xAC :
         case 0xCC :case 0xEC :case 0x0D :case 0x2D :case 0x4D :case 0x6D :
@@ -421,6 +438,9 @@ void execute_instruction(struct cpu_state *cpu){
         case 0xCF :case 0xEF :
             aba(cpu);
             cpu->cycles += 4;
+#ifdef Debug
+            fprintf(logfile, "%02X %02X ", byte2, byte3);
+#endif
             break;
         case 0x1C :case 0x3C :case 0x5C :case 0x7C :case 0x9C :case 0xBC :
         case 0xDC :case 0xFC :case 0x1D :case 0x3D :case 0x5D :case 0x7D :
@@ -429,6 +449,9 @@ void execute_instruction(struct cpu_state *cpu){
         case 0x5F :case 0x7F :case 0x9F :case 0xDF :case 0xFF :
             oopsCycle += abx(cpu);
             cpu->cycles += 4;
+#ifdef Debug
+            fprintf(logfile, "%02X %02X ", byte2, byte3);
+#endif
             break;
         case 0x19 :case 0x39 :case 0x59 :case 0x79 :case 0x99 :case 0xB9 :
         case 0xD9 :case 0xF9 :case 0x1B :case 0x3B :case 0x5B :case 0x7B :
@@ -436,6 +459,9 @@ void execute_instruction(struct cpu_state *cpu){
         case 0xBF :
             oopsCycle += aby(cpu);
             cpu->cycles += 4;
+#ifdef Debug
+            fprintf(logfile, "%02X %02X ", byte2, byte3);
+#endif
             break;
         case 0x04 :case 0x24 :case 0x44 :case 0x64 :case 0x84 :case 0xA4 :
         case 0xC4 :case 0xE4 :case 0x05 :case 0x25 :case 0x45 :case 0x65 :
@@ -445,6 +471,9 @@ void execute_instruction(struct cpu_state *cpu){
         case 0xC7 :case 0xE7 :
             zpa(cpu);
             cpu->cycles += 3;
+#ifdef Debug
+            fprintf(logfile, "%02X    ", byte2);
+#endif
             break;
         case 0x14 :case 0x34 :case 0x54 :case 0x74 :case 0x94 :case 0xB4 :
         case 0xD4 :case 0xF4 :case 0x15 :case 0x35 :case 0x55 :case 0x75 :
@@ -453,29 +482,49 @@ void execute_instruction(struct cpu_state *cpu){
         case 0x57 :case 0x77 :case 0xD7 :case 0xF7 :
             zpx(cpu);
             cpu->cycles += 4;
+#ifdef Debug
+            fprintf(logfile, "%02X    ", byte2);
+#endif
             break;
         case 0x96 :case 0xB6 :case 0x97 :case 0xB7 :
             zpy(cpu);
             cpu->cycles += 4;
+#ifdef Debug
+            fprintf(logfile, "%02X    ", byte2);
+#endif
             break;
         case 0x6C :
             ind(cpu);
+            cpu->cycles += 6;
+#ifdef Debug
+            fprintf(logfile, "%02X %02X ", byte2, byte3);
+#endif
             break;
         case 0x01 :case 0x21 :case 0x41 :case 0x61 :case 0x81 :case 0xA1 :
         case 0xC1 :case 0xE1 :case 0x03 :case 0x23 :case 0x43 :case 0x63 :
         case 0x83 :case 0xA3 :case 0xC3 :case 0xE3 :
             idx(cpu);
             cpu->cycles += 6;
+#ifdef Debug
+            fprintf(logfile, "%02X %02X ", byte2, byte3);
+#endif
             break;
         case 0x11 :case 0x31 :case 0x51 :case 0x71 :case 0x91 :case 0xB1 :
         case 0xD1 :case 0xF1 :case 0x13 :case 0x33 :case 0x53 :case 0x73 :
         case 0x93 :case 0xB3 :case 0xD3 :case 0xF3 :
             oopsCycle += idy(cpu);
             cpu->cycles += 5;
+#ifdef Debug
+            fprintf(logfile, "%02X %02X ", byte2, byte3);
+#endif
             break;
         case 0x10 :case 0x30 :case 0x50 :case 0x70 :case 0x90 :case 0xB0 :
         case 0xD0 :case 0xF0 :
             oopsCycle += rel(cpu);
+            cpu->cycles += 5;
+#ifdef Debug
+            fprintf(logfile, "%02X    ", byte2);
+#endif
             break;
     }
 
@@ -528,9 +577,11 @@ void execute_instruction(struct cpu_state *cpu){
             break;
         case 0xCA :
             cpu->x--;
+            setFlags(cpu, cpu->x, n | z);
             break;
         case 0x88 :
             cpu->y--;
+            setFlags(cpu, cpu->y, n | z);
             break;
         case 0x41 :case 0x51 :case 0x45 :case 0x55 :case 0x49 :case 0x59 :
         case 0x4D :case 0x5D :
@@ -541,9 +592,11 @@ void execute_instruction(struct cpu_state *cpu){
             break;
         case 0xE8 :
             cpu->x++;
+            setFlags(cpu, cpu->x, n | z);
             break;
         case 0xC8 :
             cpu->y++;
+            setFlags(cpu, cpu->y, n | z);
             break;
         case 0x4C :case 0x6C :
             jmp(cpu);
@@ -576,6 +629,7 @@ void execute_instruction(struct cpu_state *cpu){
             break;
         case 0x68 :
             cpu->acc = pop(cpu);
+            setFlags(cpu, cpu->acc, n | z);
             break;
         case 0x28 :
             cpu->status = pop(cpu);
@@ -617,23 +671,33 @@ void execute_instruction(struct cpu_state *cpu){
             break;
         case 0xAA :
             cpu->x = cpu->acc;
+            setFlags(cpu, cpu->x, n | z);
             break;
         case 0xA8 :
             cpu->y = cpu->acc;
+            setFlags(cpu, cpu->y, n | z);
             break;
         case 0xBA :
             cpu->x = cpu->sp;
+            setFlags(cpu, cpu->x, n | z);
             break;
         case 0x8A :
             cpu->acc = cpu->x;
+            setFlags(cpu, cpu->acc, n | z);
             break;
         case 0x9A :
             cpu->sp = cpu->x;
             break;
         case 0x98 :
             cpu->acc = cpu->y;
+            setFlags(cpu, cpu->acc, n | z);
             break;
     }
+
+#ifdef Debug
+    fprintf(logfile, "%02X %02X %02X %02X %02X\n", cpu->acc, cpu->x, cpu->y, cpu->status, cpu->sp);
+    fflush(logfile);
+#endif
 }
 
 void cpu_clock(struct cpu_state *cpu) {
