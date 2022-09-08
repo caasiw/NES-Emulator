@@ -3,8 +3,6 @@
 #include "ppuMemory.h"
 #include "mappers.h"
 
-#include <stdio.h>
-
 uint8_t ram[0x0800];
 uint8_t controller1 = 0x00;
 uint8_t controller2 = 0x00;
@@ -118,54 +116,13 @@ uint8_t cpu_read(uint16_t address) {
         }
     }
     else if ( (address < 0x4020) && (address >= 0x4000) ) {
-       
-    }
-    else if ( (address <= 0xFFFF) && (address >= 0x4020) ) {
-        return mappers[mapper].cpuRead(address);
-    }
-    return 0;
-}
-
-uint8_t cpu_read_debug(uint16_t address) {
-    if ( (address < 0x2000) && (address >= 0x0000) ) {
-        return ram[(address % 0x0800)];
-    }
-    else if ( (address < 0x4000) && (address >= 0x2000) ) {
-        switch (address & 8) {
-            case 0 :
-                return 0;
-                break;
-            case 1 :
-                return 0;
-                break;
-            case 2 :
-                return 0;
-                break;
-            case 3 :
-                return 0;
-                break;
-            case 4 :
-                return 0;
-                break;
-            case 5 :
-                return 0;
-                break;
-            case 6 :
-                return 0;
-                break;
-            case 7 :
-                return 0;
-                break;
-        }
-    }
-    else if ( (address < 0x4020) && (address >= 0x4000) ) {
-        if (address == 0x4016) {
-            uint8_t temp = !!(controller1Shift & 0x80);
+       if (address == 0x4016) {
+            uint8_t temp = ((controller1Shift & 0x80) > 0);
             controller1Shift <<= 1;
             return temp;
         }
         else if (address == 0x4017) {
-            uint8_t temp = !!(controller2Shift & 0x80);
+            uint8_t temp = ((controller2Shift & 0x80) > 0);
             controller2Shift <<= 1;
             return temp;
         }

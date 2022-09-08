@@ -2,8 +2,6 @@
 #include "ppu.h"
 #include "ppuMemory.h"
 
-#include <stdio.h>
-
 uint16_t shiftHI, shiftLO, shiftPHI, shiftPLO;
 uint8_t nextID, nextAtt, nextLO, nextHI;
 
@@ -62,7 +60,8 @@ void shiftRegisters() {
     }
 }
 
-void ppu_clock(struct ppu_state *ppu) {
+int ppu_clock(struct ppu_state *ppu) {
+    int sendNMI = 0;
 
     // Pre Render
     if (ppu->scanline == 261) {
@@ -130,7 +129,7 @@ void ppu_clock(struct ppu_state *ppu) {
         if ((ppu->scanline == 241) && (ppu->cycle == 1)) {
             ppuStatus.vBlank = 1;
             if (ppuControl.generateNMI) {
-                
+                sendNMI = 1;
             }
         }
 
@@ -159,10 +158,11 @@ void ppu_clock(struct ppu_state *ppu) {
                 temp1 = ((shiftLO & selector) > 0);
                 temp2 = ((shiftHI & selector) > 0);
                 bgPal = (temp2 << 1) | temp1;
-
                 uint8_t colour = ppu_read((0x3F00 + (bgPal << 2) + bgVal));
                 ppu->pixels[((ppu->scanline * 256) + ppu->cycle)] = colour;
             }
         }
     }
+
+    return sendNMI;
 }

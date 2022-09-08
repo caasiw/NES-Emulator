@@ -6,6 +6,9 @@
 struct cpu_state {
     uint16_t pc, opAddress;
     uint8_t acc, x, y, sp, status;
+    uint8_t opcode, byte2, byte3;
+    uint8_t operand;
+    int pendingNMI;
     int cycles;
 };
 

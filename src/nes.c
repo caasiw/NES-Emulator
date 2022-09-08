@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include "cpu.h"
 #include "memory.h"
 #include "input.h"
@@ -16,16 +15,15 @@ int main(int argc, char* args[]) {
     int running = 1;
     while(running) {
         cpu_clock(&cpu);
-        ppu_clock(&ppu);
-        ppu_clock(&ppu);
-        ppu_clock(&ppu);
-        if (ppu.scanline == 261 && ppu.cycle == 2) {
+        cpu.pendingNMI += ppu_clock(&ppu);
+        cpu.pendingNMI += ppu_clock(&ppu);
+        cpu.pendingNMI += ppu_clock(&ppu);
+        if (ppu.scanline == 261 && ((ppu.cycle >= 2) && (ppu.cycle <= 4))) {
             gui_update(ppu.pixels);
             controller1 = pollController1();
             controller2 = pollController2();
             running = pollEvents();
         }
     }
-
     gui_stop();
 }

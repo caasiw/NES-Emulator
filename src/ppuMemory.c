@@ -29,11 +29,11 @@ void ppu_write(uint16_t address, uint8_t data) {
         }
     }
     else if ( (address <= 0x3FFF) && (address >= 0x3F00) ) {
-        int temp = address - 0x3F00;
-        if ((temp % 4) == 0) 
-            palette[0] = data;
-        else
-            palette[(temp / 4) + (temp % 4)] = data;
+        int temp = address & 0x001F;
+        if ((temp & 0x0010) && ((temp % 4) == 0))
+            temp &= ~0x0010;
+        
+        palette[temp] = data;
     }
 }
 
@@ -63,11 +63,11 @@ uint8_t ppu_read(uint16_t address) {
         }
     }
     else if ( (address <= 0x3FFF) && (address >= 0x3F00) ) {
-        int temp = address - 0x3F00;
-        if ((temp % 4) == 0) 
-            return palette[0];
-        else
-            return palette[(temp / 4) + (temp % 4)];
+        int temp = address & 0x001F;
+        if ((temp & 0x0010) && ((temp % 4) == 0))
+            temp &= ~0x0010;
+        
+        return palette[temp];
     }
     return 0;
 }

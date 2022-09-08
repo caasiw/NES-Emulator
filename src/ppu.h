@@ -9,6 +9,6 @@ struct ppu_state {
 };
 
 struct ppu_state ppu_init();
-void ppu_clock(struct ppu_state *ppu);
+int ppu_clock(struct ppu_state *ppu);
 
 #endif

@@ -1,13 +1,9 @@
 #include <stdint.h>
 #include "cpu.h"
 #include "memory.h"
+#include "opcodes.h"
 
-#define Debug
-
-#ifdef Debug
-#include <stdio.h>
-FILE *logfile;
-#endif
+// FILE *logfile;
 
 #define c (1 << 0)
 #define z (1 << 1)
@@ -29,17 +25,6 @@ uint16_t read16wrap(uint16_t address) {
         return read16(address);
 }
 
-int pageCheck(uint16_t address, uint8_t offset) {
-    return ( (((address & 0x00FF) + offset) & 0xFF00) ? 1 : 0);
-}
-
-void setFlags(struct cpu_state *cpu, uint8_t result, uint8_t mask) {
-    if (mask & n)
-        cpu->status = ((result & n) ? (cpu->status | n) : (cpu->status & ~n));
-    if (mask & z)
-        cpu->status = ((result == 0) ? (cpu->status | z) : (cpu->status & ~z));
-}
-
 uint8_t pop(struct cpu_state *cpu) {
     return cpu_read(0x0100 + ++cpu->sp);
 }
@@ -59,292 +44,229 @@ void push16(struct cpu_state *cpu, uint16_t data) {
     push(cpu, (data & 0x00FF));
 }
 
-// Addressing Modes
+int pageCheck(uint16_t address, uint8_t offset) {
+    return ( (((address & 0x00FF) + offset) & 0xFF00) ? 1 : 0);
+}
+
+uint8_t fetchOperand(struct cpu_state *cpu) {
+    void *mode = opcodes[cpu->opcode].mode;
+    if (mode == &acc)
+        return cpu->acc;
+    else if (mode == &imm)
+        return cpu->byte2;
+    else
+        return cpu_read(cpu->opAddress);
+}
+
+/* Addressing Modes */
+int imp(struct cpu_state *cpu) {
+    return 0;
+}
+
+int acc(struct cpu_state *cpu) {
+    return 0;
+}
+
 int imm(struct cpu_state *cpu) {
-    cpu->opAddress = cpu->pc++; 
+    cpu->opAddress = cpu->pc++;
+    cpu->byte2 = cpu_read(cpu->opAddress);
     return 0;
-}
-
-int aba(struct cpu_state *cpu) {
-    cpu->opAddress = read16(cpu->pc++); 
-    cpu->pc++; 
-    return 0;
-}
-
-int abx(struct cpu_state *cpu) {
-    aba(cpu); 
-    uint16_t temp = cpu->opAddress; 
-    cpu->opAddress += cpu->x; 
-    return pageCheck(temp, cpu->x);
-}
-
-int aby(struct cpu_state *cpu) {
-    aba(cpu); 
-    uint16_t temp = cpu->opAddress; 
-    cpu->opAddress += cpu->y; 
-    return pageCheck(temp, cpu->y);
 }
 
 int zpa(struct cpu_state *cpu) {
-    cpu->opAddress = cpu_read(cpu->pc++); 
+    cpu->byte2 = cpu_read(cpu->pc++);
+    cpu->opAddress = cpu->byte2;
     return 0;
 }
 
 int zpx(struct cpu_state *cpu) {
-    cpu->opAddress = ((cpu_read(cpu->pc++) + cpu->x)& 0x00FF); 
+    cpu->byte2 = cpu_read(cpu->pc++);
+    cpu->opAddress = (cpu->byte2 + cpu->x) & 0x00FF;
     return 0;
 }
 
 int zpy(struct cpu_state *cpu) {
-    cpu->opAddress = ((cpu_read(cpu->pc++) + cpu->y)& 0x00FF); 
+    cpu->byte2 = cpu_read(cpu->pc++);
+    cpu->opAddress = (cpu->byte2 + cpu->y) & 0x00FF;
+    return 0;
+}
+
+int aba(struct cpu_state *cpu) {
+    cpu->byte2 = cpu_read(cpu->pc++);
+    cpu->byte3 = cpu_read(cpu->pc++);
+    cpu->opAddress = (cpu->byte3 << 8) | cpu->byte2;
+    return 0;
+}
+
+int abx(struct cpu_state *cpu) {
+    cpu->byte2 = cpu_read(cpu->pc++);
+    cpu->byte3 = cpu_read(cpu->pc++);
+    cpu->opAddress = ((cpu->byte3 << 8) | cpu->byte2) + cpu->x;
+    if ((cpu->byte2 + cpu->x) & 0xFF00)
+        return 1;
+    return 0;
+}
+
+int aby(struct cpu_state *cpu) {
+    cpu->byte2 = cpu_read(cpu->pc++);
+    cpu->byte3 = cpu_read(cpu->pc++);
+    cpu->opAddress = ((cpu->byte3 << 8) | cpu->byte2) + cpu->y;
+    if ((cpu->byte2 + cpu->y) & 0xFF00)
+        return 1;
     return 0;
 }
 
 int ind(struct cpu_state *cpu) {
-    cpu->opAddress = read16wrap(cpu->opAddress); 
+    cpu->byte2 = cpu_read(cpu->pc++);
+    cpu->byte3 = cpu_read(cpu->pc++);
+    cpu->opAddress = (cpu->byte3 << 8) | cpu->byte2;
+    cpu->opAddress = read16wrap(cpu->opAddress);
     return 0;
 }
 
 int idx(struct cpu_state *cpu) {
-    cpu->opAddress = read16wrap((cpu_read(cpu->pc++) + cpu->x) & 0x00FF); 
+    cpu->byte2 = cpu_read(cpu->pc++);
+    cpu->opAddress = read16wrap((cpu->byte2 + cpu->x) & 0x00FF);
     return 0;
 }
 
 int idy(struct cpu_state *cpu) {
-    uint16_t temp = read16wrap(cpu_read(cpu->pc++));
+    cpu->byte2 = cpu_read(cpu->pc++);
+    uint16_t temp = read16wrap(cpu->byte2);
     cpu->opAddress = temp + cpu->y;
     return pageCheck(temp, cpu->y);
 }
 
 int rel(struct cpu_state *cpu) {
-    uint8_t temp = cpu_read(cpu->pc++);
-    cpu->opAddress = ( (temp & 0x80) ? cpu->pc - 128 : cpu->pc);
-    cpu->opAddress += (temp & 0x7F);
-    return ( ((cpu->opAddress & 0xFF00) != (cpu->pc & 0xFF00)) ? 1 : 0);
+    cpu->byte2 = cpu_read(cpu->pc++);
+    cpu->opAddress = ( (cpu->byte2 & 0x80) ? cpu->pc - 128 : cpu->pc);
+    cpu->opAddress += (cpu->byte2 & 0x7F);
+    return ((cpu->opAddress & 0xFF00) != (cpu->pc & 0xFF00));
 }
 
-// Group One Instructions
-int ora(struct cpu_state *cpu) {
-    cpu->acc |= cpu_read(cpu->opAddress);
-    setFlags(cpu, cpu->acc, z | n);
-    return 1;
-}
-
+/* Bitwise Operations */
 int and(struct cpu_state *cpu) {
-    cpu->acc &= cpu_read(cpu->opAddress);
-    setFlags(cpu, cpu->acc, z | n);
+    uint8_t operand = fetchOperand(cpu);
+    cpu->acc &= operand;
+    cpu->status = ( (cpu->acc == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->acc & n ) ? (cpu->status | n) : (cpu->status & ~n));
     return 1;
 }
 
 int eor(struct cpu_state *cpu) {
-    cpu->acc ^= cpu_read(cpu->opAddress);
-    setFlags(cpu, cpu->acc, z | n);
+    uint8_t operand = fetchOperand(cpu);
+    cpu->acc ^= operand;
+    cpu->status = ( (cpu->acc == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->acc & n ) ? (cpu->status | n) : (cpu->status & ~n));
     return 1;
 }
 
-int adc(struct cpu_state *cpu) {
-    uint8_t operand = cpu_read(cpu->opAddress);
-    uint16_t temp = cpu->acc + operand + (cpu->status & c);
-    setFlags(cpu, (temp & 0x00FF), z | n);
-    if (temp > 0x00FF)
-        cpu->status |= c;
-    else
-        cpu->status &= ~c;
-    if ( (((~(cpu->acc ^ operand)) & (cpu->acc ^ temp)) & n) )
-        cpu->status |= v;
-    else
-        cpu->status &= ~v;
-    cpu->acc = temp & 0x00FF;
+int ora(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    cpu->acc |= operand;
+    cpu->status = ( (cpu->acc == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->acc & n ) ? (cpu->status | n) : (cpu->status & ~n));
     return 1;
 }
 
-int sta(struct cpu_state *cpu) {
-    cpu_write(cpu->opAddress, cpu->acc);
+int asl(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    cpu->status = ( (operand & n ) ? (cpu->status | c) : (cpu->status & ~c));
+    operand <<= 1;
+    cpu->status = ( (operand == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (operand & n ) ? (cpu->status | n) : (cpu->status & ~n));
+    if (opcodes[cpu->opcode].mode == &acc)
+        cpu->acc = operand;
+    else
+        cpu_write(cpu->opAddress, operand);
+    return 1;
+}
+
+int lsr(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    cpu->status = ( (operand & c ) ? (cpu->status | c) : (cpu->status & ~c));
+    operand >>= 1;
+    cpu->status = ( (operand == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status &= ~n;
+    if (opcodes[cpu->opcode].mode == &acc)
+        cpu->acc = operand;
+    else
+        cpu_write(cpu->opAddress, operand);
+    return 1;
+}
+
+int rol(struct cpu_state *cpu) {
+    uint16_t operand = fetchOperand(cpu);
+    operand = (operand << 1) | (cpu->status & c);
+    cpu->status = ( (operand & 0x100) ? (cpu->status | c) : (cpu->status & ~c));
+    operand &= 0xFF;
+    cpu->status = ( (operand == 0   ) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (operand & n    ) ? (cpu->status | n) : (cpu->status & ~n));
+    if (opcodes[cpu->opcode].mode == &acc)
+        cpu->acc = (uint8_t)operand;
+    else
+        cpu_write(cpu->opAddress, (uint8_t)operand);
     return 0;
 }
 
-int lda(struct cpu_state *cpu) {
-    cpu->acc = cpu_read(cpu->opAddress);
-    setFlags(cpu, cpu->acc, z | n);
-    return 1;
+int ror(struct cpu_state *cpu) {
+    uint16_t operand = fetchOperand(cpu);
+    operand |= ( (cpu->status & c) ? 0x100 : 0);
+    cpu->status = ( (operand & c ) ? (cpu->status | c) : (cpu->status & ~c));
+    operand >>= 1;
+    cpu->status = ( (operand == 0   ) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (operand & n    ) ? (cpu->status | n) : (cpu->status & ~n));
+    if (opcodes[cpu->opcode].mode == &acc)
+        cpu->acc = (uint8_t)operand;
+    else
+        cpu_write(cpu->opAddress, (uint8_t)operand);
+    return 0;
+}
+
+/* Comparison */
+int bit(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    cpu->status = ((operand & cpu->acc) ? (cpu->status & ~z):(cpu->status | z));
+    cpu->status = ((operand & v) ? (cpu->status | v) : (cpu->status & ~v));
+    cpu->status = ((operand & n) ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
 }
 
 int cmp(struct cpu_state *cpu) {
-    uint8_t op = cpu_read(cpu->opAddress);
-    if (cpu->acc >= op)
-        cpu->status |= c;
-    else
-        cpu->status &= ~c;
-    setFlags(cpu, (cpu->acc - op), z | n);
+    uint8_t operand = fetchOperand(cpu);
+    uint8_t temp = cpu->acc - operand;
+    cpu->status = ((cpu->acc >= operand)? (cpu->status | c):(cpu->status & ~c));
+    cpu->status = ((temp == 0) ? (cpu->status | z):(cpu->status & ~z));
+    cpu->status = ((temp & n ) ? (cpu->status | n) : (cpu->status & ~n));
     return 1;
-}
-
-int sbc(struct cpu_state *cpu) {
-    uint8_t operand = ~cpu_read(cpu->opAddress);
-    uint16_t temp = cpu->acc + operand + (cpu->status & c);
-    setFlags(cpu, (temp & 0x00FF), z | n);
-    if (temp > 0x00FF)
-        cpu->status |= c;
-    else
-        cpu->status &= ~c;
-    if ( (((~(cpu->acc ^ operand)) & (cpu->acc ^ temp)) & n) )
-        cpu->status |= v;
-    else
-        cpu->status &= ~v;
-    cpu->acc = temp & 0x00FF;
-    return 1;
-}
-
-// Group Two Instructions
-int asl(struct cpu_state *cpu, int useAddress) {
-    uint8_t operand = ( (useAddress) ? cpu_read(cpu->opAddress) : cpu->acc);
-    if (operand & n)
-        cpu->status |= c;
-    else
-        cpu->status &= ~c;
-    operand <<= 1;
-    setFlags(cpu, operand, z | n);
-    if (useAddress)
-        cpu_write(cpu->opAddress, operand);
-    else
-        cpu->acc = operand;
-    return 1;
-}
-
-int rol(struct cpu_state *cpu, int useAddress) {
-    uint8_t operand = ( (useAddress) ? cpu_read(cpu->opAddress) : cpu->acc);
-    int rolledBit = cpu->status & c;
-    if (operand & n)
-        cpu->status |= c;
-    else
-        cpu->status &= ~c;
-    operand = (operand << 1) | rolledBit;
-    setFlags(cpu, operand, z | n);
-    if (useAddress)
-        cpu_write(cpu->opAddress, operand);
-    else
-        cpu->acc = operand;
-    return 0;
-}
-
-int lsr(struct cpu_state *cpu, int useAddress) {
-    uint8_t operand = ( (useAddress) ? cpu_read(cpu->opAddress) : cpu->acc);
-    if (operand & c)
-        cpu->status |= c;
-    else
-        cpu->status &= ~c;
-    operand >>= 1;
-    setFlags(cpu, operand, z | n);
-    if (useAddress)
-        cpu_write(cpu->opAddress, operand);
-    else
-        cpu->acc = operand;
-    return 1;
-}
-
-int ror(struct cpu_state *cpu, int useAddress) {
-    uint8_t operand = ( (useAddress) ? cpu_read(cpu->opAddress) : cpu->acc);
-    int rolledBit = cpu->status & c;
-    if (operand & c)
-        cpu->status |= c;
-    else
-        cpu->status &= ~c;
-    operand = (operand >> 1) | (rolledBit << 7);
-    setFlags(cpu, operand, z | n);
-    if (useAddress)
-        cpu_write(cpu->opAddress, operand);
-    else
-        cpu->acc = operand;
-    return 0;
-}
-
-int stx(struct cpu_state *cpu) {
-    cpu_write(cpu->opAddress, cpu->x);
-    return 0;
-}
-
-int ldx(struct cpu_state *cpu) {
-    cpu->x = cpu_read(cpu->opAddress);
-    setFlags(cpu, cpu->x, z | n);
-    return 1;
-}
-
-int dec(struct cpu_state *cpu) {
-    uint8_t temp = cpu_read(cpu->opAddress);
-    setFlags(cpu, --temp, z | n);
-    cpu_write(cpu->opAddress, temp);
-    return 0;
-}
-
-int inc(struct cpu_state *cpu) {
-    uint8_t temp = cpu_read(cpu->opAddress);
-    setFlags(cpu, ++temp, z | n);
-    cpu_write(cpu->opAddress, temp);
-    return 0;
-}
-
-// Group Three Instructions
-int bit(struct cpu_state *cpu) {
-    uint8_t operand = cpu_read(cpu->opAddress);
-    setFlags(cpu, operand, n);
-    if (operand & 0x40)
-        cpu->status |= v;
-    else
-        cpu->status &= ~v;
-    setFlags(cpu, operand & cpu->acc, z);
-    return 0;
-}
-
-int jmp(struct cpu_state *cpu) {
-    cpu->pc = cpu->opAddress;
-    return 0;
-}
-
-int sty(struct cpu_state *cpu) {
-    cpu_write(cpu->opAddress, cpu->y);
-    return 0;
-}
-
-int ldy(struct cpu_state *cpu) {
-    cpu->y = cpu_read(cpu->opAddress);
-    setFlags(cpu, cpu->y, z | n);
-    return 1;
-}
-
-int cpy(struct cpu_state *cpu) {
-    uint8_t op = cpu_read(cpu->opAddress);
-    if (cpu->y >= op)
-        cpu->status |= c;
-    else
-        cpu->status &= ~c;
-    setFlags(cpu, (cpu->y - op), z | n);
-    return 0;
 }
 
 int cpx(struct cpu_state *cpu) {
-    uint8_t op = cpu_read(cpu->opAddress);
-    if (cpu->x >= op)
-        cpu->status |= c;
-    else
-        cpu->status &= ~c;
-    setFlags(cpu, (cpu->x - op), z | n);
+    uint8_t operand = fetchOperand(cpu);
+    uint8_t temp = cpu->x - operand;
+    cpu->status = ((cpu->x >= operand)? (cpu->status | c):(cpu->status & ~c));
+    cpu->status = ((temp == 0) ? (cpu->status | z):(cpu->status & ~z));
+    cpu->status = ((temp & n ) ? (cpu->status | n) : (cpu->status & ~n));
     return 0;
 }
 
+int cpy(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    uint8_t temp = cpu->y - operand;
+    cpu->status = ((cpu->y >= operand)? (cpu->status | c):(cpu->status & ~c));
+    cpu->status = ((temp == 0) ? (cpu->status | z):(cpu->status & ~z));
+    cpu->status = ((temp & n ) ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+/* Jump Operations */
 int brk(struct cpu_state *cpu) {
     cpu->pc++;
-    cpu->status |= (i | b);
+    cpu->status |= i | b;
     push16(cpu, cpu->pc);
     push(cpu, cpu->status);
     cpu->status &= ~b;
     cpu->pc = read16(0xFFFE);
-    return 0;
-}
-
-int jsr(struct cpu_state *cpu) {
-    cpu->pc--;
-    push16(cpu, cpu->pc);
-    cpu->pc = cpu->opAddress;
     return 0;
 }
 
@@ -356,20 +278,249 @@ int rti(struct cpu_state *cpu) {
     return 0;
 }
 
+int jmp(struct cpu_state *cpu) {
+    cpu->pc = cpu->opAddress;
+    return 0;   
+}
+
+int jsr(struct cpu_state *cpu) {
+    cpu->pc--;
+    push16(cpu, cpu->pc);
+    cpu->pc = cpu->opAddress;
+    return 0;
+}
+
 int rts(struct cpu_state *cpu) {
     cpu->pc = pop16(cpu);
     cpu->pc++;
     return 0;
 }
 
-int branch(struct cpu_state *cpu, uint8_t opcode) {
-    uint8_t flag;
-    if (opcode & (1 << 7))
-        flag = ( (opcode & (1 << 6)) ? z : c);
-    else
-        flag = ( (opcode & (1 << 6)) ? v : n);
+/* Arithmetic Operations */
+int adc(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    uint16_t temp = cpu->acc + operand + (cpu->status & c);
+    cpu->status = ((temp > 0xFF) ? (cpu->status | c) : (cpu->status & ~c));
+    cpu->status = ((temp & 0xFF) ? (cpu->status &~ z) : (cpu->status | z));
+    cpu->status = ((((~(cpu->acc ^ operand)) & (cpu->acc ^ temp)) & n) ? 
+                    (cpu->status | v) : (cpu->status & ~v));
+    cpu->status = ((temp & n   ) ? (cpu->status | n) : (cpu->status & ~n));
+    cpu->acc = temp & 0xFF;
+    return 1;
+}
 
-    if ((!!(cpu->status & flag)) == (!!(opcode & (1 << 5)))) {
+int sbc(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    operand ^= 0xFF;
+    uint16_t temp = cpu->acc + operand + (cpu->status & c);
+    cpu->status = ((temp > 0xFF) ? (cpu->status | c) : (cpu->status & ~c));
+    cpu->status = ((temp & 0xFF) ? (cpu->status &~ z) : (cpu->status | z));
+    cpu->status = ((((~(cpu->acc ^ operand)) & (cpu->acc ^ temp)) & n) ? 
+                    (cpu->status | v) : (cpu->status & ~v));
+    cpu->status = ((temp & n   ) ? (cpu->status | n) : (cpu->status & ~n));
+    cpu->acc = temp & 0xFF;
+    return 1;
+}
+
+/* Memory Operations */
+int lda(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    cpu->acc = operand;
+    cpu->status = ( (cpu->acc == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->acc & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 1;
+}
+
+int sta(struct cpu_state *cpu) {
+    cpu_write(cpu->opAddress, cpu->acc);
+    return 0;
+}
+
+int ldx(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    cpu->x = operand;
+    cpu->status = ( (cpu->x == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->x & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 1;
+}
+
+int stx(struct cpu_state *cpu) {
+    cpu_write(cpu->opAddress, cpu->x);
+    return 0;
+}
+
+int ldy(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    cpu->y = operand;
+    cpu->status = ( (cpu->y == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->y & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 1;
+}
+
+int sty(struct cpu_state *cpu) {
+    cpu_write(cpu->opAddress, cpu->y);
+    return 0;
+}
+
+int inc(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    operand++;
+    cpu->status = ( (operand == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (operand & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    cpu_write(cpu->opAddress, operand);
+    return 0;
+}
+
+int dec(struct cpu_state *cpu) {
+    uint8_t operand = fetchOperand(cpu);
+    operand--;
+    cpu->status = ( (operand == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (operand & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    cpu_write(cpu->opAddress, operand);
+    return 0;
+}
+
+/* Register Operations */
+int tax(struct cpu_state *cpu) {
+    cpu->x = cpu->acc;
+    cpu->status = ( (cpu->x == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->x & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+int txa(struct cpu_state *cpu) {
+    cpu->acc = cpu->x;
+    cpu->status = ( (cpu->acc == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->acc & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+int tay(struct cpu_state *cpu) {
+    cpu->y = cpu->acc;
+    cpu->status = ( (cpu->y == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->y & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+int tya(struct cpu_state *cpu) {
+    cpu->acc = cpu->y;
+    cpu->status = ( (cpu->acc == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->acc & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+int txs(struct cpu_state *cpu) {
+    cpu->sp = cpu->x;
+    return 0;
+}
+
+int tsx(struct cpu_state *cpu) {
+    cpu->x = cpu->sp;
+    cpu->status = ( (cpu->x == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->x & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+int inx(struct cpu_state *cpu) {
+    cpu->x++;
+    cpu->status = ( (cpu->x == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->x & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+int dex(struct cpu_state *cpu) {
+    cpu->x--;
+    cpu->status = ( (cpu->x == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->x & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+int iny(struct cpu_state *cpu) {
+    cpu->y++;
+    cpu->status = ( (cpu->y == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->y & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+int dey(struct cpu_state *cpu) {
+    cpu->y--;
+    cpu->status = ( (cpu->y == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->y & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+/* Stack Operations */
+int pha(struct cpu_state *cpu) {
+    push(cpu, cpu->acc);
+    return 0;
+}
+
+int pla(struct cpu_state *cpu) {
+    cpu->acc = pop(cpu);
+    cpu->status = ( (cpu->acc == 0) ? (cpu->status | z) : (cpu->status & ~z));
+    cpu->status = ( (cpu->acc & n)  ? (cpu->status | n) : (cpu->status & ~n));
+    return 0;
+}
+
+int php(struct cpu_state *cpu) {
+    cpu->status |= u;
+    push(cpu, cpu->status);
+    cpu->status &= ~b;
+    return 0;
+}
+
+int plp(struct cpu_state *cpu) {
+    cpu->status = pop(cpu);
+    cpu->status |= u;
+    cpu->status &= ~b;
+    return 0;
+}
+
+/* Flag Operations */
+int clc(struct cpu_state *cpu) {
+    cpu->status &= ~c;
+    return 0;
+}
+
+int sec(struct cpu_state *cpu) {
+    cpu->status |= c;
+    return 0;
+}
+
+int cli(struct cpu_state *cpu) {
+    cpu->status &= ~i;
+    return 0;
+}
+
+int sei(struct cpu_state *cpu) {
+    cpu->status |= i;
+    return 0;
+}
+
+int clv(struct cpu_state *cpu) {
+    cpu->status &= ~v;
+    return 0;
+}
+
+int cld(struct cpu_state *cpu) {
+    cpu->status &= ~d;
+    return 0;
+}
+
+int sed(struct cpu_state *cpu) {
+    cpu->status |= d;
+    return 0;
+}
+
+/* Branch Operations */
+int bra(struct cpu_state *cpu) {
+    uint8_t flag;
+    if (cpu->opcode & (1 << 7))
+        flag = ( (cpu->opcode & (1 << 6)) ? z : c);
+    else
+        flag = ( (cpu->opcode & (1 << 6)) ? v : n);
+
+    if ((!!(cpu->status & flag)) == (!!(cpu->opcode & (1 << 5)))) {
         cpu->pc = cpu->opAddress;
         cpu->cycles++;
         return 1;
@@ -377,332 +528,72 @@ int branch(struct cpu_state *cpu, uint8_t opcode) {
     return 0;
 }
 
+/* NOP and Illegal Opcodes */
+int nop(struct cpu_state *cpu) {
+    return 0;
+}
+
+int ill(struct cpu_state *cpu) {
+    return 0;
+}
+
+/* Interrupts */
+void nmi(struct cpu_state *cpu) {
+    push16(cpu, cpu->pc);
+    cpu->status &= ~b;
+    cpu->status |= u | i;
+    push(cpu, cpu->status);
+    cpu->pc = read16(0xFFFA);
+}
 
 struct cpu_state cpu_init() {
     struct cpu_state cpu = {0};
-    // cpu.pc = (cpu_read(0xFFFD) << 8) | (cpu_read(0xFFFC));
     cpu.pc = read16(0xFFFC);
     cpu.status = 0x34;
     cpu.sp = 0xFD;
-    logfile = fopen("./logs/log.txt", "w+");
+    // logfile = fopen("./logs/log.txt", "w+");
     return cpu;
-}
-
-void execute_instruction(struct cpu_state *cpu){
-    uint8_t opcode = cpu_read(cpu->pc++);
-    int oopsCycle = 0;
-    int accOrAddress = 1;
-
-#ifdef Debug
-    fprintf(logfile, "%04X %02X ", cpu->pc, opcode);
-    uint8_t byte2 = cpu_read_debug(cpu->pc + 1);
-    uint8_t byte3 = cpu_read_debug(cpu->pc + 2);
-#endif
-
-    switch (opcode) {
-        case 0x00 :case 0x40 :case 0x60 :case 0x02 :case 0x12 :case 0x22 :
-        case 0x32 :case 0x42 :case 0x52 :case 0x62 :case 0x72 :case 0x92 :
-        case 0xB2 :case 0xD2 :case 0xF2 :case 0x08 :case 0x18 :case 0x28 :
-        case 0x38 :case 0x48 :case 0x58 :case 0x68 :case 0x78 :case 0x88 :
-        case 0x98 :case 0xA8 :case 0xB8 :case 0xC8 :case 0xD8 :case 0xE8 :
-        case 0xF8 :case 0x1A :case 0x3A :case 0x5A :case 0x7A :case 0x8A :
-        case 0x9A :case 0xAA :case 0xBA :case 0xCA :case 0xDA :case 0xEA :
-        case 0xFA :
-            cpu->cycles += 2;
-#ifdef Debug
-            fprintf(logfile, "      ");
-#endif
-            break;
-        case 0x0A :case 0x2A :case 0x4A :case 0x6A :
-#ifdef Debug
-            fprintf(logfile, "      ");
-#endif
-            accOrAddress = 0;
-            cpu->cycles += 2;
-            break;
-        case 0x80 :case 0xA0 :case 0xC0 :case 0xE0 :case 0x82 :case 0xA2 :
-        case 0xC2 :case 0xE2 :case 0x09 :case 0x29 :case 0x49 :case 0x69 :
-        case 0x89 :case 0xA9 :case 0xC9 :case 0xE9 :case 0x0B :case 0x2B :
-        case 0x4B :case 0x6B :case 0x8B :case 0xAB :case 0xCB :case 0xEB :
-            imm(cpu);
-            cpu->cycles += 2;
-#ifdef Debug
-            fprintf(logfile, "%02X    ", byte2);
-#endif
-            break;
-        case 0x20 :case 0x0C :case 0x2C :case 0x4C :case 0x8C :case 0xAC :
-        case 0xCC :case 0xEC :case 0x0D :case 0x2D :case 0x4D :case 0x6D :
-        case 0x8D :case 0xAD :case 0xCD :case 0xED :case 0x0E :case 0x2E :
-        case 0x4E :case 0x6E :case 0x8E :case 0xAE :case 0xCE :case 0xEE :
-        case 0x0F :case 0x2F :case 0x4F :case 0x6F :case 0x8F :case 0xAF :
-        case 0xCF :case 0xEF :
-            aba(cpu);
-            cpu->cycles += 4;
-#ifdef Debug
-            fprintf(logfile, "%02X %02X ", byte2, byte3);
-#endif
-            break;
-        case 0x1C :case 0x3C :case 0x5C :case 0x7C :case 0x9C :case 0xBC :
-        case 0xDC :case 0xFC :case 0x1D :case 0x3D :case 0x5D :case 0x7D :
-        case 0x9D :case 0xBD :case 0xDD :case 0xFD :case 0x1E :case 0x3E :
-        case 0x5E :case 0x7E :case 0xDE :case 0xFE :case 0x1F :case 0x3F :
-        case 0x5F :case 0x7F :case 0x9F :case 0xDF :case 0xFF :
-            oopsCycle += abx(cpu);
-            cpu->cycles += 4;
-#ifdef Debug
-            fprintf(logfile, "%02X %02X ", byte2, byte3);
-#endif
-            break;
-        case 0x19 :case 0x39 :case 0x59 :case 0x79 :case 0x99 :case 0xB9 :
-        case 0xD9 :case 0xF9 :case 0x1B :case 0x3B :case 0x5B :case 0x7B :
-        case 0x9B :case 0xBB :case 0xDB :case 0xFB :case 0x9E :case 0xBE :
-        case 0xBF :
-            oopsCycle += aby(cpu);
-            cpu->cycles += 4;
-#ifdef Debug
-            fprintf(logfile, "%02X %02X ", byte2, byte3);
-#endif
-            break;
-        case 0x04 :case 0x24 :case 0x44 :case 0x64 :case 0x84 :case 0xA4 :
-        case 0xC4 :case 0xE4 :case 0x05 :case 0x25 :case 0x45 :case 0x65 :
-        case 0x85 :case 0xA5 :case 0xC5 :case 0xE5 :case 0x06 :case 0x26 :
-        case 0x46 :case 0x66 :case 0x86 :case 0xA6 :case 0xC6 :case 0xE6 :
-        case 0x07 :case 0x27 :case 0x47 :case 0x67 :case 0x87 :case 0xA7 :
-        case 0xC7 :case 0xE7 :
-            zpa(cpu);
-            cpu->cycles += 3;
-#ifdef Debug
-            fprintf(logfile, "%02X    ", byte2);
-#endif
-            break;
-        case 0x14 :case 0x34 :case 0x54 :case 0x74 :case 0x94 :case 0xB4 :
-        case 0xD4 :case 0xF4 :case 0x15 :case 0x35 :case 0x55 :case 0x75 :
-        case 0x95 :case 0xB5 :case 0xD5 :case 0xF5 :case 0x16 :case 0x36 :
-        case 0x56 :case 0x76 :case 0xD6 :case 0xF6 :case 0x17 :case 0x37 :
-        case 0x57 :case 0x77 :case 0xD7 :case 0xF7 :
-            zpx(cpu);
-            cpu->cycles += 4;
-#ifdef Debug
-            fprintf(logfile, "%02X    ", byte2);
-#endif
-            break;
-        case 0x96 :case 0xB6 :case 0x97 :case 0xB7 :
-            zpy(cpu);
-            cpu->cycles += 4;
-#ifdef Debug
-            fprintf(logfile, "%02X    ", byte2);
-#endif
-            break;
-        case 0x6C :
-            ind(cpu);
-            cpu->cycles += 6;
-#ifdef Debug
-            fprintf(logfile, "%02X %02X ", byte2, byte3);
-#endif
-            break;
-        case 0x01 :case 0x21 :case 0x41 :case 0x61 :case 0x81 :case 0xA1 :
-        case 0xC1 :case 0xE1 :case 0x03 :case 0x23 :case 0x43 :case 0x63 :
-        case 0x83 :case 0xA3 :case 0xC3 :case 0xE3 :
-            idx(cpu);
-            cpu->cycles += 6;
-#ifdef Debug
-            fprintf(logfile, "%02X %02X ", byte2, byte3);
-#endif
-            break;
-        case 0x11 :case 0x31 :case 0x51 :case 0x71 :case 0x91 :case 0xB1 :
-        case 0xD1 :case 0xF1 :case 0x13 :case 0x33 :case 0x53 :case 0x73 :
-        case 0x93 :case 0xB3 :case 0xD3 :case 0xF3 :
-            oopsCycle += idy(cpu);
-            cpu->cycles += 5;
-#ifdef Debug
-            fprintf(logfile, "%02X %02X ", byte2, byte3);
-#endif
-            break;
-        case 0x10 :case 0x30 :case 0x50 :case 0x70 :case 0x90 :case 0xB0 :
-        case 0xD0 :case 0xF0 :
-            oopsCycle += rel(cpu);
-            cpu->cycles += 5;
-#ifdef Debug
-            fprintf(logfile, "%02X    ", byte2);
-#endif
-            break;
-    }
-
-    switch (opcode) {
-        case 0x61 :case 0x71 :case 0x65 :case 0x75 :case 0x69 :case 0x79 :
-        case 0x6D :case 0x7D :
-            oopsCycle += adc(cpu);
-            break;
-        case 0x21 :case 0x31 :case 0x25 :case 0x35 :case 0x29 :case 0x39 :
-        case 0x2D :case 0x3D :
-            oopsCycle += and(cpu);
-            break;
-        case 0x06 :case 0x16 :case 0x0A :case 0x0E :case 0x1E :
-            oopsCycle += asl(cpu, accOrAddress);
-            break;
-        case 0x10 :case 0x30 :case 0x50 :case 0x70 :case 0x90 :case 0xB0 :
-        case 0xD0 :case 0xF0 :
-            oopsCycle += branch(cpu, opcode);
-            break;
-        case 0x24 :case 0x2C :
-            bit(cpu);
-            break;
-        case 0x00 :
-            brk(cpu);
-            break;
-        case 0x18 :
-            cpu->status &= ~c;
-            break;
-        case 0xD8 :
-            cpu->status &= ~d;
-            break;
-        case 0x58 :
-            cpu->status &= ~i;
-            break;
-        case 0xB8 :
-            cpu->status &= ~v;
-            break;
-        case 0xC1 :case 0xD1 :case 0xC5 :case 0xD5 :case 0xC9 :case 0xD9 :
-        case 0xCD :case 0xDD :
-            oopsCycle += cmp(cpu);
-            break;
-        case 0xE0 :case 0xE4 :case 0xEC :
-            cpx(cpu);
-            break;
-        case 0xC0 :case 0xC4 :case 0xCC :
-            cpy(cpu);
-            break;
-        case 0xC6 :case 0xD6 :case 0xCE :case 0xDE :
-            dec(cpu);
-            break;
-        case 0xCA :
-            cpu->x--;
-            setFlags(cpu, cpu->x, n | z);
-            break;
-        case 0x88 :
-            cpu->y--;
-            setFlags(cpu, cpu->y, n | z);
-            break;
-        case 0x41 :case 0x51 :case 0x45 :case 0x55 :case 0x49 :case 0x59 :
-        case 0x4D :case 0x5D :
-            oopsCycle += eor(cpu);
-            break;
-        case 0xE6 :case 0xF6 :case 0xEE :case 0xFE :
-            inc(cpu);
-            break;
-        case 0xE8 :
-            cpu->x++;
-            setFlags(cpu, cpu->x, n | z);
-            break;
-        case 0xC8 :
-            cpu->y++;
-            setFlags(cpu, cpu->y, n | z);
-            break;
-        case 0x4C :case 0x6C :
-            jmp(cpu);
-            break;
-        case 0x20 :
-            jsr(cpu);
-            break;
-        case 0xA1 :case 0xB1 :case 0xA5 :case 0xB5 :case 0xA9 :case 0xB9 :
-        case 0xAD :case 0xBD :
-            oopsCycle += lda(cpu);
-            break;
-        case 0xA2 :case 0xA6 :case 0xB6 :case 0xAE :case 0xBE :
-            oopsCycle += ldx(cpu);
-            break;
-        case 0xA0 :case 0xA4 :case 0xB4 :case 0xAC :case 0xBC :
-            oopsCycle += ldy(cpu);
-            break;
-        case 0x46 :case 0x56 :case 0x4A :case 0x4E :case 0x5E :
-            oopsCycle += lsr(cpu, accOrAddress);
-            break;
-        case 0x01 :case 0x11 :case 0x05 :case 0x15 :case 0x09 :case 0x19 :
-        case 0x0D :case 0x1D :
-            oopsCycle += ora(cpu);
-            break;
-        case 0x48 :
-            push(cpu, cpu->acc);
-            break;
-        case 0x08 :
-            push(cpu, cpu->status);
-            break;
-        case 0x68 :
-            cpu->acc = pop(cpu);
-            setFlags(cpu, cpu->acc, n | z);
-            break;
-        case 0x28 :
-            cpu->status = pop(cpu);
-            break;
-        case 0x26 :case 0x36 :case 0x2A :case 0x2E :case 0x3E :
-            rol(cpu, accOrAddress);
-            break;
-        case 0x66 :case 0x76 :case 0x6A :case 0x6E :case 0x7E :
-            ror(cpu, accOrAddress);
-            break;
-        case 0x40 :
-            rti(cpu);
-            break;
-        case 0x60 :
-            rts(cpu);
-            break;
-        case 0xE1 :case 0xF1 :case 0xE5 :case 0xF5 :case 0xE9 :case 0xF9 :
-        case 0xED :case 0xFD :
-            oopsCycle += sbc(cpu);
-            break;
-        case 0x38 :
-            cpu->status |= c;
-            break;
-        case 0xF8 :
-            cpu->status |= d;
-            break;
-        case 0x78 :
-            cpu->status |= i;
-            break;
-        case 0x81 :case 0x91 :case 0x85 :case 0x95 :case 0x99 :case 0x8D :
-        case 0x9D :
-            sta(cpu);
-            break;
-        case 0x86 :case 0x96 :case 0x8E :
-            stx(cpu);
-            break;
-        case 0x84 :case 0x94 :case 0x8C :
-            sty(cpu);
-            break;
-        case 0xAA :
-            cpu->x = cpu->acc;
-            setFlags(cpu, cpu->x, n | z);
-            break;
-        case 0xA8 :
-            cpu->y = cpu->acc;
-            setFlags(cpu, cpu->y, n | z);
-            break;
-        case 0xBA :
-            cpu->x = cpu->sp;
-            setFlags(cpu, cpu->x, n | z);
-            break;
-        case 0x8A :
-            cpu->acc = cpu->x;
-            setFlags(cpu, cpu->acc, n | z);
-            break;
-        case 0x9A :
-            cpu->sp = cpu->x;
-            break;
-        case 0x98 :
-            cpu->acc = cpu->y;
-            setFlags(cpu, cpu->acc, n | z);
-            break;
-    }
-
-#ifdef Debug
-    fprintf(logfile, "%02X %02X %02X %02X %02X\n", cpu->acc, cpu->x, cpu->y, cpu->status, cpu->sp);
-    fflush(logfile);
-#endif
 }
 
 void cpu_clock(struct cpu_state *cpu) {
     if (cpu->cycles == 0) {
-        execute_instruction(cpu);
+        if (cpu->pendingNMI > 0) {
+            cpu->pendingNMI = 0;
+            cpu->cycles = 7;
+            nmi(cpu);
+        }
+        else {
+            cpu->opcode = cpu_read(cpu->pc++);
+            struct Instruction op = opcodes[cpu->opcode];
+            op.mode(cpu);
+            op.op(cpu);
+            cpu->cycles += op.cycles;
+
+        //     switch (opcodes[cpu->opcode].size) {
+        //         case 1 :
+        //             fprintf(logfile, "%04X %02X       - %c%c%c (%c%c%c) - %02X %02X %02X %02X %02X\n",
+        //                     cpu->pc, cpu->opcode, op.operation[0], op.operation[1], op.operation[2],
+        //                     op.addressingMode[0], op.addressingMode[1], op.addressingMode[2], 
+        //                     cpu->acc, cpu->x, cpu->y, cpu->sp, cpu->status);
+        //             break;
+        //         case 2 :
+        //             fprintf(logfile, "%04X %02X %02X    - %c%c%c (%c%c%c) - %02X %02X %02X %02X %02X\n",
+        //                     cpu->pc, cpu->opcode, cpu->byte2,
+        //                     op.operation[0], op.operation[1], op.operation[2],
+        //                     op.addressingMode[0], op.addressingMode[1], op.addressingMode[2], 
+        //                     cpu->acc, cpu->x, cpu->y, cpu->sp, cpu->status);
+        //             break;
+        //         case 3 :
+        //             fprintf(logfile, "%04X %02X %02X %02X - %c%c%c (%c%c%c) - %02X %02X %02X %02X %02X\n",
+        //                     cpu->pc, cpu->opcode, cpu->byte2, cpu->byte3,
+        //                     op.operation[0], op.operation[1], op.operation[2],
+        //                     op.addressingMode[0], op.addressingMode[1], op.addressingMode[2], 
+        //                     cpu->acc, cpu->x, cpu->y, cpu->sp, cpu->status);
+        //             break;
+        //     }
+
+        // fflush(logfile);
+        }
     }
     cpu->cycles--;
 }
