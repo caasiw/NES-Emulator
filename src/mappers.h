@@ -26,6 +26,6 @@ uint8_t m000_cpuRead(uint16_t address);
 void m000_ppuWrite(uint16_t address, uint8_t data);
 uint8_t m000_ppuRead(uint16_t address);
 
-struct mapper mappers[256];
+struct mapper mappers[256]; // Values assigned in romLoader.c
 
 #endif

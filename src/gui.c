@@ -1,6 +1,8 @@
 #include <stdio.h>
+#include <stdint.h>
 #include "./../lib/SDL/include/SDL2/SDL.h"
 #include "gui.h"
+#include "typeface.h"
 
 #define Width 256
 #define Height 240
@@ -46,6 +48,29 @@ void gui_stop() {
     SDL_Quit();
 }
 
+void renderChar(uint8_t *pixels, uint8_t x, uint8_t y, int val) {
+    if ((y >= 232) || (x >= 248))
+        return;
+
+    if (val == 32)
+        return;
+    
+    if (val < 97)
+        val = (val - 65) % 26;
+    else
+        val = (val - 97) % 26;
+
+    uint8_t bitmap[8] = {font[(val*8)+0], font[(val*8)+1], font[(val*8)+2], font[(val*8)+3],
+                         font[(val*8)+4], font[(val*8)+5], font[(val*8)+6], font[(val*8)+7]};
+
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if (bitmap[i] & (0x80 >> j))
+                pixels[((y + i) * 256) + (x + j)] = 0x24;
+        }
+    }
+}
+
 void gui_update(uint8_t *pixels) {
     struct COLOUR colour;
     for (int y = 0; y < 240; y++) {
@@ -63,5 +88,6 @@ void gui_update(uint8_t *pixels) {
         }
         // printf("\n");
     }
+
     SDL_UpdateWindowSurface(window);
 }
