@@ -1,7 +1,12 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include "mappers.h"
+
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 
 struct mapper mappers[256] = {
     {&m000_init, &m000_ppuRead, &m000_cpuRead, &m000_ppuWrite, &m000_cpuWrite}
@@ -41,8 +46,60 @@ void parseRom(FILE *rom) {
     mappers[mapper].init(prg, chr, prgBanks, chrBanks);
 }
 
+
+#ifdef _WIN32
 FILE* selectRom() {
+    WIN32_FIND_DATA FindFileData;
+    HANDLE hFind;
+
+    hFind = FindFirstFile("../roms/*.nes", &FindFileData);
+    if (hFind == INVALID_HANDLE_VALUE)
+        exit(1);
+
+    char *romNames;
+    char **romIndexes;
+
+    int numRoms = 1;
+    while (FindNextFileA(hFind, &FindFileData)) {
+        numRoms++;
+    }
+
+    romNames = malloc(sizeof(char) * 25 * numRoms);
+    memset(romNames, '\0', sizeof(char) * 25 * numRoms);
+    romIndexes = malloc(sizeof(char*) * numRoms);
+
+    int i = 0;
+    hFind = FindFirstFile("../roms/*.nes", &FindFileData);
+    if (hFind == INVALID_HANDLE_VALUE)
+        exit(1);
+
+    strncpy(romNames, FindFileData.cFileName, 25);
+    romIndexes[0] = &romNames[0];
+
+    while (FindNextFileA(hFind, &FindFileData)) {
+        i++;
+        if (i < numRoms) {
+            strncpy(&romNames[25 * i], FindFileData.cFileName, 25);
+            romIndexes[i] = &romNames[(25 * i)];
+        }
+    }
+
+    for (int n = 0; n < numRoms; n++) {
+        printf("%s\n", romIndexes[n]);
+    }
+
+    FindClose(hFind);
+
     FILE *rom;
     rom = fopen("../roms/nestest.nes", "rb");
     return rom;
 }
+#else
+FILE* selectRom() {
+
+    printf("Literally What? \n");
+    FILE *rom;
+    rom = fopen("../roms/nestest.nes", "rb");
+    return rom;
+}
+#endif
