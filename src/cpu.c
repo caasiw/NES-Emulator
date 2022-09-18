@@ -534,6 +534,7 @@ int nop(struct cpu_state *cpu) {
 }
 
 int ill(struct cpu_state *cpu) {
+    cpu->cycles++;
     return 0;
 }
 
